@@ -417,6 +417,17 @@ func callCaptchaNotRobot(ctx context.Context, sessionToken, hash string, streamI
 
 	baseParams := fmt.Sprintf("session_token=%s&domain=vk.com&adFp=&access_token=", neturl.QueryEscape(sessionToken))
 
+	// Step 0: initSession — VK's JS always calls this before settings
+	turnLog("[STREAM %d] [Captcha] Step 0/4: initSession", streamID)
+	if initResp, err := vkReq("captchaNotRobot.initSession", baseParams); err != nil {
+		turnLog("[STREAM %d] [Captcha] Warning: initSession failed: %v", streamID, err)
+	} else if respObj, ok := initResp["response"].(map[string]interface{}); ok {
+		if showType, _ := respObj["show_captcha_type"].(string); showType != "" {
+			turnLog("[STREAM %d] [Captcha] initSession: show_captcha_type=%s", streamID, showType)
+		}
+	}
+	time.Sleep(200 * time.Millisecond)
+
 	turnLog("[STREAM %d] [Captcha] Step 1/4: settings", streamID)
 	if _, err := vkReq("captchaNotRobot.settings", baseParams); err != nil {
 		return "", fmt.Errorf("settings failed: %w", err)

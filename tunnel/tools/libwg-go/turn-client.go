@@ -71,6 +71,7 @@ var turnHTTPClient = &http.Client{
 		}).DialContext,
 		MaxIdleConns: 100,
 		IdleConnTimeout: 90 * time.Second,
+		TLSClientConfig: &tls.Config{RootCAs: loadCABundle()},
 	},
 }
 
