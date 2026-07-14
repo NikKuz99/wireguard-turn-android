@@ -214,6 +214,33 @@ class CaptchaActivity : AppCompatActivity() {
                         }
                     } catch(ex) {}
                 });
+
+                // Auto-click the captcha checkbox after a short delay
+                // This simulates a real user clicking "I'm not a robot"
+                function autoClickCaptcha() {
+                    var cb = document.getElementById('not-robot-captcha-checkbox');
+                    if (cb) {
+                        // Try click() first
+                        try { cb.click(); } catch(e) {}
+                        // Also try dispatching a real click event
+                        try {
+                            var evt = new MouseEvent('click', {
+                                bubbles: true, cancelable: true, view: window
+                            });
+                            cb.dispatchEvent(evt);
+                        } catch(e) {}
+                        // Also try finding a clickable parent/label
+                        try {
+                            var label = cb.closest('label') || cb.parentElement;
+                            if (label) label.click();
+                        } catch(e) {}
+                    } else {
+                        // Retry — checkbox might not be rendered yet
+                        setTimeout(autoClickCaptcha, 500);
+                    }
+                }
+                // Start auto-click after 1.5 seconds (let page render)
+                setTimeout(autoClickCaptcha, 1500);
             })();
         """.trimIndent()
 

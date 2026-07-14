@@ -52,48 +52,38 @@ func ParseVkCaptchaError(errData map[string]interface{}) *VkCaptchaError {
 	}
 	code := int(codeFloat)
 
-	// Extract redirect_uri
-	RedirectURI, ok := errData["redirect_uri"].(string)
-	if !ok {
-		turnLog("missing redirect_uri in captcha error data")
-		return nil
-	}
+	// Extract redirect_uri (optional in new VK captcha flow)
+	RedirectURI, _ := errData["redirect_uri"].(string)
 
-	// Extract captcha_sid
+	// Extract captcha_sid (optional in new flow)
 	captchaSid, ok := errData["captcha_sid"].(string)
 	if !ok {
-		// try numeric
 		if sidNum, ok2 := errData["captcha_sid"].(float64); ok2 {
 			captchaSid = fmt.Sprintf("%.0f", sidNum)
-		} else {
-			turnLog("missing captcha_sid in captcha error data")
-			return nil
 		}
 	}
 
-	// Extract captcha_img
-	captchaImg, ok := errData["captcha_img"].(string)
-	if !ok {
-		turnLog("missing captcha_img in captcha error data")
-		return nil
-	}
+	// Extract captcha_img (optional in new flow)
+	captchaImg, _ := errData["captcha_img"].(string)
 
-	// Extract error_msg
-	errorMsg, ok := errData["error_msg"].(string)
-	if !ok {
-		turnLog("missing error_msg in captcha error data")
-		return nil
-	}
+	// Extract error_msg (optional)
+	errorMsg, _ := errData["error_msg"].(string)
 
 	// Extract session token if redirect_uri present
 	var sessionToken string
 	if RedirectURI != "" {
-		if parsed, err := neturl.Parse(RedirectURI); err == nil {
-			sessionToken = parsed.Query().Get("session_token")
-		} else {
+		parsed, err := neturl.Parse(RedirectURI)
+		if err != nil {
 			turnLog("failed to parse redirect_uri: %v", err)
 			return nil
 		}
+		sessionToken = parsed.Query().Get("session_token")
+	}
+
+	// Require at least one solvable path
+	if RedirectURI == "" && sessionToken == "" && captchaImg == "" && captchaSid == "" {
+		turnLog("no solvable captcha path in error data")
+		return nil
 	}
 
 	// Extract is_sound_captcha_available
@@ -240,8 +230,12 @@ func solveVkCaptcha(ctx context.Context, captchaErr *VkCaptchaError, streamID in
 
 	turnLog("[STREAM %d] [Captcha] PoW input: %s, difficulty: %d", streamID, bootstrap.PowInput, bootstrap.Difficulty)
 
-	hash := solvePoW(bootstrap.PowInput, bootstrap.Difficulty)
-	turnLog("[STREAM %d] [Captcha] PoW solved: hash=%s", streamID, hash)
+	hexHash, nonce, ok := solvePoW(bootstrap.PowInput, bootstrap.Difficulty)
+	if !ok {
+		return "", fmt.Errorf("PoW solve exhausted")
+	}
+	hash := formatPoWResult(hexHash, nonce)
+	turnLog("[STREAM %d] [Captcha] PoW solved: nonce=%d (v2-wrapped)", streamID, nonce)
 
 	var successToken string
 	if useSliderPOC {
@@ -328,17 +322,52 @@ func fetchCaptchaBootstrap(ctx context.Context, redirectURI string, client tlscl
 	return parseCaptchaBootstrapHTML(string(body))
 }
 
-func solvePoW(powInput string, difficulty int) string {
+func solvePoW(powInput string, difficulty int) (string, int, bool) {
 	target := strings.Repeat("0", difficulty)
 	for nonce := 1; nonce <= 10000000; nonce++ {
 		data := powInput + strconv.Itoa(nonce)
 		hash := sha256.Sum256([]byte(data))
 		hexHash := hex.EncodeToString(hash[:])
 		if strings.HasPrefix(hexHash, target) {
-			return hexHash
+			return hexHash, nonce, true
 		}
 	}
-	return ""
+	return "", 0, false
+}
+
+func formatPoWResult(hexHash string, nonce int) string {
+	payload := fmt.Sprintf(`{"hash":%q,"nonce":%d}`, hexHash, nonce)
+	encoded := base64.StdEncoding.EncodeToString([]byte(payload))
+	return "v2." + encoded
+}
+
+const captchaDebugInfoHardcoded = "4045edac1cb2c18eff209dc09cd5e2e56475a13ed4615413a87618b3c6813f9a"
+
+func generateConnectionRtt(n int) string {
+	if n <= 0 { n = 10 }
+	base := 45 + rand.Intn(40)
+	parts := make([]string, 0, n)
+	for i := 0; i < n; i++ {
+		jitter := rand.Intn(41) - 10
+		if rand.Intn(8) == 0 { jitter += 30 + rand.Intn(60) }
+		val := base + jitter
+		if val < 5 { val = 5 }
+		parts = append(parts, strconv.Itoa(val))
+	}
+	return "[" + strings.Join(parts, ",") + "]"
+}
+
+func generateConnectionDownlink(n int) string {
+	if n <= 0 { n = 16 }
+	baseTenths := 50 + rand.Intn(100)
+	parts := make([]string, 0, n)
+	for i := 0; i < n; i++ {
+		jitter := rand.Intn(7) - 3
+		t := baseTenths + jitter
+		if t < 10 { t = 10 }
+		parts = append(parts, fmt.Sprintf("%.1f", float64(t)/10.0))
+	}
+	return "[" + strings.Join(parts, ",") + "]"
 }
 
 func callCaptchaNotRobot(ctx context.Context, sessionToken, hash string, streamID int, client tlsclient.HttpClient, profile Profile) (string, error) {
@@ -410,12 +439,9 @@ func callCaptchaNotRobot(ctx context.Context, sessionToken, hash string, streamI
 	cursorJSON := generateFakeCursor()
 	answer := base64.StdEncoding.EncodeToString([]byte("{}"))
 
-	// Dynamically generate debug_info to avoid static fingerprint bans
-	debugInfoBytes := md5.Sum([]byte(profile.UserAgent + strconv.FormatInt(time.Now().UnixNano(), 10)))
-	debugInfo := hex.EncodeToString(debugInfoBytes[:])
-
-	connectionRtt := "[50,50,50,50,50,50,50,50,50,50]"
-	connectionDownlink := "[9.5,9.5,9.5,9.5,9.5,9.5,9.5,9.5,9.5,9.5,9.5,9.5,9.5,9.5,9.5,9.5]"
+	debugInfo := captchaDebugInfoHardcoded
+	connectionRtt := generateConnectionRtt(10)
+	connectionDownlink := generateConnectionDownlink(16)
 
 	checkData := baseParams + fmt.Sprintf(
 		"&accelerometer=%s&gyroscope=%s&motion=%s&cursor=%s&taps=%s&connectionRtt=%s&connectionDownlink=%s&browser_fp=%s&hash=%s&answer=%s&debug_info=%s",
