@@ -66,7 +66,7 @@
     <string name="allow_remote_control_intents_summary_on">External apps may toggle tunnels (advanced)</string>
     <string name="allow_remote_control_intents_title">Allow remote control apps</string>
     <string name="allowed_ips">Allowed IPs</string>
-    <string name="app_name" translatable="false">WG Turn</string>
+    <string name="app_name" translatable="false">CMD WG turn</string>
     <string name="bad_config_context">%1$s\'s %2$s</string>
     <string name="bad_config_context_top_level">%s</string>
     <string name="bad_config_error">%1$s in %2$s</string>
@@ -300,7 +300,9 @@
     <string name="turn_wrap_key">Wrap key (optional)</string>
     <string name="turn_wrap_key_hint">64 hex chars (empty = disabled)</string>
     <string name="turn_wrap_key_generate">Generate</string>
+    <string name="turn_wrap_key_show_qr">Show QR</string>
     <string name="turn_wrap_key_clear">Clear</string>
+    <string name="turn_wrap_key_qr_dialog_title">Wrap key QR code</string>
     <string name="captcha_title">Verify You Are Human</string>
     <string name="captcha_loading">Loading captcha…</string>
     <string name="captcha_error">Failed to solve captcha. Please try again.</string>

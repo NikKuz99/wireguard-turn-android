@@ -43,6 +43,8 @@ import kotlinx.coroutines.withContext
 /**
  * Maintains and mediates changes to the set of available WireGuard tunnels,
  */
+private const val TAG = "WireGuard/TunnelManager"
+
 class TunnelManager(
     private val configStore: ConfigStore,
     private val turnSettingsStore: TurnSettingsStore,
@@ -137,10 +139,12 @@ class TunnelManager(
     fun onCreate() {
         applicationScope.launch {
             try {
-                onTunnelsLoaded(
-                    withContext(Dispatchers.IO) { configStore.enumerate() },
-                    withContext(Dispatchers.IO) { getBackend().runningTunnelNames },
-                )
+                Log.d(TAG, "onCreate: enumerating tunnels...")
+                val present = withContext(Dispatchers.IO) { configStore.enumerate() }
+                Log.d(TAG, "onCreate: enumerate returned ${present.size} tunnels: $present")
+                val running = withContext(Dispatchers.IO) { getBackend().runningTunnelNames }
+                Log.d(TAG, "onCreate: running tunnel names: $running")
+                onTunnelsLoaded(present, running)
             } catch (e: Throwable) {
                 Log.e(TAG, Log.getStackTraceString(e))
             }
@@ -148,15 +152,27 @@ class TunnelManager(
     }
 
     private fun onTunnelsLoaded(present: Iterable<String>, running: Collection<String>) {
-        for (name in present)
+        Log.d(TAG, "onTunnelsLoaded: present=${present.toList()}, running=${running.toList()}")
+        for (name in present) {
+            Log.d(TAG, "onTunnelsLoaded: adding to list: $name")
             addToList(name, null, if (running.contains(name)) Tunnel.State.UP else Tunnel.State.DOWN)
+        }
+        Log.d(TAG, "onTunnelsLoaded: tunnelMap.size=" + tunnelMap.size)
         applicationScope.launch {
             val lastUsedName = UserKnobs.lastUsedTunnel.first()
             if (lastUsedName != null)
                 lastUsedTunnel = tunnelMap[lastUsedName]
             haveLoaded = true
-            restoreState(true)
+            // Complete tunnels deferred FIRST so UI shows the list immediately,
+            // even if restoreState (which may trigger captcha + VK auth) takes time.
+            // Previously restoreState was called before complete(), causing UI to
+            // show empty list during the 15-30s captcha resolution window, which
+            // made users think the tunnel was missing and try to re-add it.
+            Log.d(TAG, "onTunnelsLoaded: completing tunnels deferred (before restoreState)")
             tunnels.complete(tunnelMap)
+            Log.d(TAG, "onTunnelsLoaded: tunnels.complete() done, calling restoreState(true)")
+            restoreState(true)
+            Log.d(TAG, "onTunnelsLoaded: restoreState done")
         }
     }
 
@@ -173,14 +189,24 @@ class TunnelManager(
     }
 
     suspend fun restoreState(force: Boolean) {
-        if (!haveLoaded || (!force && !UserKnobs.restoreOnBoot.first()))
+        Log.d(TAG, "restoreState(force=$force): haveLoaded=$haveLoaded")
+        if (!haveLoaded || (!force && !UserKnobs.restoreOnBoot.first())) {
+            Log.d(TAG, "restoreState: early return (haveLoaded=$haveLoaded)")
             return
+        }
         val previouslyRunning = UserKnobs.runningTunnels.first()
-        if (previouslyRunning.isEmpty()) return
+        Log.d(TAG, "restoreState: previouslyRunning=$previouslyRunning, tunnelMap.size=${tunnelMap.size}")
+        if (previouslyRunning.isEmpty()) {
+            Log.d(TAG, "restoreState: no previously running tunnels, returning")
+            return
+        }
+        val toRestore = tunnelMap.filter { previouslyRunning.contains(it.name) }
+        Log.d(TAG, "restoreState: toRestore=${toRestore.map { it.name }}")
         withContext(Dispatchers.IO) {
             try {
-                tunnelMap.filter { previouslyRunning.contains(it.name) }.map { async(Dispatchers.IO + SupervisorJob()) { setTunnelState(it, Tunnel.State.UP) } }
+                toRestore.map { async(Dispatchers.IO + SupervisorJob()) { setTunnelState(it, Tunnel.State.UP) } }
                     .awaitAll()
+                Log.d(TAG, "restoreState: all tunnels restored")
             } catch (e: Throwable) {
                 Log.e(TAG, Log.getStackTraceString(e))
             }
@@ -275,6 +301,14 @@ class TunnelManager(
 
         var newState = tunnel.state
         var throwable: Throwable? = null
+        val originalState = tunnel.state
+        // Optimistically mark tunnel as UP *before* the long TURN startup (captcha + VK auth).
+        // This makes the toggle switch reflect the "starting" state immediately, instead of
+        // showing OFF for 15-30 seconds while restoreState() is in progress.
+        // If startup fails, we roll back to originalState below.
+        if (state == Tunnel.State.UP || (state == Tunnel.State.TOGGLE && tunnel.state == Tunnel.State.DOWN)) {
+            tunnel.onStateChanged(Tunnel.State.UP)
+        }
         try {
             val backend = getBackend()
             var configToUse = tunnel.getConfigAsync()
@@ -282,11 +316,13 @@ class TunnelManager(
             val turnEnabled = turn != null && turn.enabled
             
             // Determine if TURN should be started before WireGuard activation.
-            // This happens when explicitly requesting UP, or TOGGLE from DOWN state
-            val shouldStartTurn = state == Tunnel.State.UP || (state == Tunnel.State.TOGGLE && tunnel.state == Tunnel.State.DOWN)
+            // This happens when explicitly requesting UP, or TOGGLE from DOWN state.
+            // NOTE: use originalState here (not tunnel.state) because we may have
+            // optimistically set tunnel.state to UP above, which would break TOGGLE logic.
+            val shouldStartTurn = state == Tunnel.State.UP || (state == Tunnel.State.TOGGLE && originalState == Tunnel.State.DOWN)
             
             // Stop TURN when tunnel goes DOWN
-            val shouldStopTurn = state == Tunnel.State.DOWN || (state == Tunnel.State.TOGGLE && tunnel.state == Tunnel.State.UP)
+            val shouldStopTurn = state == Tunnel.State.DOWN || (state == Tunnel.State.TOGGLE && originalState == Tunnel.State.UP)
 
             suspend fun cleanupFailedTurnStartup(goBackend: GoBackend) {
                 withContext(Dispatchers.IO) {
@@ -341,8 +377,16 @@ class TunnelManager(
             }
         } catch (e: Throwable) {
             throwable = e
+            // Roll back optimistic state on failure so toggle switch returns to its
+            // original position. Only do this if we actually changed state above
+            // (i.e. originalState was DOWN/TOGGLE and we optimistically set UP).
+            if (originalState != Tunnel.State.UP) {
+                tunnel.onStateChanged(originalState)
+            }
         }
-        tunnel.onStateChanged(newState)
+        if (throwable == null) {
+            tunnel.onStateChanged(newState)
+        }
         saveState()
         if (throwable != null)
             throw throwable
