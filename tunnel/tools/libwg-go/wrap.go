@@ -9,7 +9,9 @@ import (
 	"encoding/hex"
 	"errors"
 	"fmt"
+	"net"
 	"sync/atomic"
+	"time"
 
 	"golang.org/x/crypto/chacha20poly1305"
 )
@@ -169,3 +171,48 @@ func decodeWrapKey(enabled bool, raw string) ([]byte, error) {
 	}
 	return key, nil
 }
+
+// wrappedPacketConn wraps a TURN relay PacketConn to direct all writes to
+// the peer, applying SRTP-mimicry AEAD wrap/unwrap if wc != nil.
+type wrappedPacketConn struct {
+	relay net.PacketConn
+	peer  net.Addr
+	wc    *wrapConn
+}
+
+func (r *wrappedPacketConn) ReadFrom(b []byte) (int, net.Addr, error) {
+	if r.wc == nil {
+		return r.relay.ReadFrom(b)
+	}
+	buf := make([]byte, wrapMaxWire(len(b)))
+	n, addr, err := r.relay.ReadFrom(buf)
+	if err != nil {
+		return 0, addr, err
+	}
+	m, err := r.wc.unwrapPacket(buf[:n], b)
+	if err != nil {
+		return 0, addr, err
+	}
+	return m, addr, nil
+}
+
+func (r *wrappedPacketConn) WriteTo(b []byte, _ net.Addr) (int, error) {
+	if r.wc == nil {
+		return r.relay.WriteTo(b, r.peer)
+	}
+	out := make([]byte, wrapMaxWire(len(b)))
+	n, err := r.wc.wrapInto(out, b)
+	if err != nil {
+		return 0, err
+	}
+	if _, err = r.relay.WriteTo(out[:n], r.peer); err != nil {
+		return 0, err
+	}
+	return len(b), nil
+}
+
+func (r *wrappedPacketConn) Close() error                       { return r.relay.Close() }
+func (r *wrappedPacketConn) LocalAddr() net.Addr                { return r.relay.LocalAddr() }
+func (r *wrappedPacketConn) SetDeadline(t time.Time) error      { return r.relay.SetDeadline(t) }
+func (r *wrappedPacketConn) SetReadDeadline(t time.Time) error  { return r.relay.SetReadDeadline(t) }
+func (r *wrappedPacketConn) SetWriteDeadline(t time.Time) error { return r.relay.SetWriteDeadline(t) }

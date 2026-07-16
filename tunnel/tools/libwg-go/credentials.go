@@ -38,6 +38,7 @@ const (
 )
 
 var streamsPerCred = 4 // Number of streams sharing one credentials cache
+var wrapKeyBytes []byte // Shared wrap key (32 bytes), empty = wrap disabled
 
 // getCacheID returns the shared cache ID for a given stream ID
 func getCacheID(streamID int) int {

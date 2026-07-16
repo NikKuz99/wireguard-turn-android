@@ -211,6 +211,17 @@ func (s *stream) runNoDTLS(ctx context.Context, relayConn net.PacketConn, peer *
 	sCtx, sCancel := context.WithCancel(ctx)
 	defer sCancel()
 
+	// WRAP integration: same as runDTLS, wrap relayConn if wrap key set
+	if len(wrapKeyBytes) == wrapKeyLen {
+		wc, werr := newWrapConn(wrapKeyBytes, false)
+		if werr != nil {
+			turnLog("[STREAM %d] WRAP init failed: %v", s.id, werr)
+		} else {
+			relayConn = &wrappedPacketConn{relay: relayConn, peer: peer, wc: wc}
+			turnLog("[STREAM %d] WRAP enabled in NoDTLS mode", s.id)
+		}
+	}
+
 	turnLog("[STREAM %d] No DTLS mode - direct relay", s.id)
 	turnLog("[STREAM %d] Forwarding to WireGuard server: %s", s.id, peer.String())
 
@@ -273,6 +284,19 @@ func (s *stream) runNoDTLS(ctx context.Context, relayConn net.PacketConn, peer *
 func (s *stream) runDTLS(ctx context.Context, relayConn net.PacketConn, peer *net.UDPAddr, okchan chan<- struct{}, sendHandshake bool) error {
 	sCtx, sCancel := context.WithCancel(ctx)
 	defer sCancel()
+
+	// WRAP integration: if wrapKeyBytes is set, wrap relayConn so DTLS
+	// packets get AEAD-wrapped as SRTP-looking RTP packets to bypass
+	// VK TURN content filter (issue #164).
+	if len(wrapKeyBytes) == wrapKeyLen {
+		wc, werr := newWrapConn(wrapKeyBytes, false)
+		if werr != nil {
+			turnLog("[STREAM %d] WRAP init failed: %v", s.id, werr)
+		} else {
+			relayConn = &wrappedPacketConn{relay: relayConn, peer: peer, wc: wc}
+			turnLog("[STREAM %d] WRAP enabled (SRTP-mimicry)", s.id)
+		}
+	}
 
 	var dtlsConn *dtls.Conn
 
@@ -444,7 +468,7 @@ var turnMutex sync.Mutex
 // Global credentials function for mode selection (set by wgTurnProxyStart)
 var globalGetCreds getCredsFunc
 //export wgTurnProxyStart
-func wgTurnProxyStart(peerAddrC *C.char, vklinkC *C.char, modeC *C.char, n C.int, udp C.int, listenAddrC *C.char, turnIpC *C.char, turnPortC C.int, peerTypeC *C.char, streamsPerCredC C.int, watchdogTimeoutC C.int, networkHandleC C.longlong) int32 {
+func wgTurnProxyStart(peerAddrC *C.char, vklinkC *C.char, modeC *C.char, n C.int, udp C.int, listenAddrC *C.char, turnIpC *C.char, turnPortC C.int, peerTypeC *C.char, streamsPerCredC C.int, watchdogTimeoutC C.int, networkHandleC C.longlong, wrapKeyC *C.char) int32 {
 	// Force initialization of resolver and HTTP client with current environment
 	wgNotifyNetworkChange()
 
@@ -469,7 +493,21 @@ func wgTurnProxyStart(peerAddrC *C.char, vklinkC *C.char, modeC *C.char, n C.int
 	watchdogTimeout := int(watchdogTimeoutC)
 	networkHandle := int64(networkHandleC)
 
-	turnLog("[PROXY] Hub starting on %s (streams=%d, mode=%s, peerType=%s, streamsPerCred=%d, watchdogTimeout=%d, networkHandle=%d)", listenAddr, int(n), mode, peerType, streamsPerCred, watchdogTimeout, networkHandle)
+	wrapKeyStr := C.GoString(wrapKeyC)
+	if wrapKeyStr != "" {
+		wk, werr := decodeWrapKey(true, wrapKeyStr)
+		if werr != nil {
+			turnLog("[PROXY] WRAP key decode failed: %v", werr)
+			wrapKeyBytes = nil
+		} else {
+			wrapKeyBytes = wk
+			turnLog("[PROXY] WRAP mode enabled (SRTP-mimicry AEAD)")
+		}
+	} else {
+		wrapKeyBytes = nil
+	}
+
+	turnLog("[PROXY] Hub starting on %s (streams=%d, mode=%s, peerType=%s, streamsPerCred=%d, watchdogTimeout=%d, networkHandle=%d, wrap=%v)", listenAddr, int(n), mode, peerType, streamsPerCred, watchdogTimeout, networkHandle, wrapKeyBytes != nil)
 	turnMutex.Lock()
 	if currentTurnCancel != nil { currentTurnCancel() }
 	ctx, cancel := context.WithCancel(context.Background())

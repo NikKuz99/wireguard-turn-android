@@ -22,6 +22,7 @@ data class TurnSettings(
     val peerType: String = "proxy_v2",  // "proxy_v2", "proxy_v1", "wireguard"
     val streamsPerCred: Int = 4,
     val watchdogTimeout: Int = 0,
+    val wrapKey: String = "",  // 64-hex-char SRTP-mimicry wrap key (empty = disabled)
 ) {
     fun toComments(): List<String> {
         val lines = mutableListOf(
@@ -40,6 +41,7 @@ data class TurnSettings(
         if (turnIp.isNotBlank()) lines.add("#@wgt:TurnIP = $turnIp")
         if (turnPort > 0) lines.add("#@wgt:TurnPort = $turnPort")
         if (watchdogTimeout > 0) lines.add("#@wgt:WatchdogTimeout = $watchdogTimeout")
+        if (wrapKey.isNotBlank()) lines.add("#@wgt:WrapKey = $wrapKey")
         return lines
     }
 
@@ -57,6 +59,7 @@ data class TurnSettings(
             var peerType: String? = null  // null means not set, will be determined from noDtls
             var streamsPerCred = 4
             var watchdogTimeout = 0
+            var wrapKey = ""
             var noDtlsLegacy = false
             var foundAny = false
 
@@ -79,6 +82,7 @@ data class TurnSettings(
                     "turnip" -> turnIp = value
                     "turnport" -> turnPort = value.toIntOrNull() ?: 0
                     "watchdogtimeout" -> watchdogTimeout = value.toIntOrNull() ?: 0
+                    "wrapkey" -> wrapKey = value
                     "nodtls" -> noDtlsLegacy = value.toBoolean()  // legacy, for backward compatibility
                     "peertype" -> peerType = value
                     "streamspercred" -> streamsPerCred = value.toIntOrNull() ?: 4
@@ -90,7 +94,7 @@ data class TurnSettings(
                 peerType = if (noDtlsLegacy) "wireguard" else "proxy_v2"
             }
 
-            return if (foundAny) TurnSettings(enabled, peer, vkLink, mode, streams, useUdp, localPort, turnIp, turnPort, peerType, streamsPerCred, watchdogTimeout) else null
+            return if (foundAny) TurnSettings(enabled, peer, vkLink, mode, streams, useUdp, localPort, turnIp, turnPort, peerType, streamsPerCred, watchdogTimeout, wrapKey) else null
         }
 
         fun validate(settings: TurnSettings): TurnSettings {

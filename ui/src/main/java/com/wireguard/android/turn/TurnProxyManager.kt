@@ -215,6 +215,7 @@ class TurnProxyManager(private val context: Context) {
                 val networkType = getNetworkTypeString(lastKnownNetwork)
                 Log.d(TAG, "Starting TURN proxy for $tunnelName with network: $lastKnownNetwork (type=$networkType, handle=$networkHandle)")
 
+                val wrapKey = settings.wrapKey
                 val ret = TurnBackend.wgTurnProxyStart(
                     settings.peer, settings.vkLink, settings.mode, settings.streams,
                     if (settings.useUdp) 1 else 0,
@@ -224,7 +225,8 @@ class TurnProxyManager(private val context: Context) {
                     settings.peerType,
                     settings.streamsPerCred,
                     settings.watchdogTimeout,
-                    networkHandle
+                    networkHandle,
+                    wrapKey
                 )
 
                 val listenAddr = "127.0.0.1:${settings.localPort}"
