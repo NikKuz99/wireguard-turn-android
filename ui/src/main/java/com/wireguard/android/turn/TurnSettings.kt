@@ -19,7 +19,7 @@ data class TurnSettings(
     val localPort: Int = 9000,
     val turnIp: String = "",
     val turnPort: Int = 0,
-    val peerType: String = "proxy_v2",  // "proxy_v2", "proxy_v1", "wireguard"
+    val peerType: String = "proxy_v1",  // "proxy_v1", "wireguard" (proxy_v2 hidden from UI, normalized to v1)
     val streamsPerCred: Int = 4,
     val watchdogTimeout: Int = 0,
     val wrapKey: String = "",  // 64-hex-char SRTP-mimicry wrap key (empty = disabled)
@@ -91,7 +91,11 @@ data class TurnSettings(
 
             // Backward compatibility: if peerType is not set, derive from legacy noDtls
             if (peerType == null) {
-                peerType = if (noDtlsLegacy) "wireguard" else "proxy_v2"
+                peerType = if (noDtlsLegacy) "wireguard" else "proxy_v1"
+            }
+            // Normalize legacy proxy_v2 to proxy_v1 (v2 hidden from UI, see iter_07.md)
+            if (peerType == "proxy_v2") {
+                peerType = "proxy_v1"
             }
 
             return if (foundAny) TurnSettings(enabled, peer, vkLink, mode, streams, useUdp, localPort, turnIp, turnPort, peerType, streamsPerCred, watchdogTimeout, wrapKey) else null
@@ -106,7 +110,7 @@ data class TurnSettings(
             }
             require(settings.streams in 1..16) { "Streams must be between 1 and 16" }
             require(settings.localPort in 1..65535) { "Local port must be between 1 and 65535" }
-            require(settings.peerType in listOf("proxy_v2", "proxy_v1", "wireguard")) { "Invalid peer type: ${settings.peerType}" }
+            require(settings.peerType in listOf("proxy_v1", "wireguard")) { "Invalid peer type: ${settings.peerType}" }
             require(settings.streamsPerCred in 1..16) { "Streams per credentials must be between 1 and 16" }
 
             if (settings.turnPort != 0) {

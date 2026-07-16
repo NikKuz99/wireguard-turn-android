@@ -573,6 +573,47 @@
                                     android:hint="@string/turn_streams_per_cred_hint"
                                     android:text="@={config.turn.streamsPerCred}" />
                             </com.google.android.material.textfield.TextInputLayout>
+
+                            <!-- Wrap Key (optional, for SRTP-mimicry AEAD wrap) -->
+                            <LinearLayout
+                                android:id="@+id/turn_wrap_key_outer_layout"
+                                android:layout_width="match_parent"
+                                android:layout_height="wrap_content"
+                                android:orientation="horizontal"
+                                android:gravity="center_vertical">
+
+                                <com.google.android.material.textfield.TextInputLayout
+                                    android:id="@+id/turn_wrap_key_layout"
+                                    android:layout_width="0dp"
+                                    android:layout_height="wrap_content"
+                                    android:layout_margin="4dp"
+                                    android:layout_weight="1"
+                                    android:enabled="@{config.turn.enabled}"
+                                    android:hint="@string/turn_wrap_key"
+                                    app:expandedHintEnabled="false"
+                                    app:endIconMode="clear_text">
+
+                                    <com.google.android.material.textfield.TextInputEditText
+                                        android:id="@+id/turn_wrap_key_text"
+                                        android:layout_width="match_parent"
+                                        android:layout_height="wrap_content"
+                                        android:enabled="@{config.turn.enabled}"
+                                        android:hint="@string/turn_wrap_key_hint"
+                                        android:imeOptions="actionDone"
+                                        android:inputType="textNoSuggestions|textVisiblePassword"
+                                        android:fontFamily="monospace"
+                                        android:text="@={config.turn.wrapKey}" />
+                                </com.google.android.material.textfield.TextInputLayout>
+
+                                <com.google.android.material.button.MaterialButton
+                                    android:id="@+id/turn_wrap_key_generate_button"
+                                    style="@style/Widget.Material3.Button.TonalButton"
+                                    android:layout_width="wrap_content"
+                                    android:layout_height="wrap_content"
+                                    android:layout_marginEnd="4dp"
+                                    android:enabled="@{config.turn.enabled}"
+                                    android:text="@string/turn_wrap_key_generate" />
+                            </LinearLayout>
                         </LinearLayout>
 
                     </androidx.constraintlayout.widget.ConstraintLayout>

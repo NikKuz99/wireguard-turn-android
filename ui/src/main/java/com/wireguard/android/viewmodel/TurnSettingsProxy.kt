@@ -84,7 +84,7 @@ class TurnSettingsProxy : BaseObservable, Parcelable {
         }
 
     @get:Bindable
-    var peerType: String = "proxy_v2"
+    var peerType: String = "proxy_v1"
         set(value) {
             field = value
             notifyPropertyChanged(BR.peerType)
@@ -95,6 +95,13 @@ class TurnSettingsProxy : BaseObservable, Parcelable {
         set(value) {
             field = value
             notifyPropertyChanged(BR.streamsPerCred)
+        }
+
+    @get:Bindable
+    var wrapKey: String = ""
+        set(value) {
+            field = value
+            notifyPropertyChanged(BR.wrapKey)
         }
 
     @get:Bindable
@@ -115,8 +122,9 @@ class TurnSettingsProxy : BaseObservable, Parcelable {
         turnIp = parcel.readString() ?: ""
         turnPort = parcel.readString() ?: ""
         watchdogTimeout = parcel.readString() ?: ""
-        peerType = parcel.readString() ?: "proxy_v2"
+        peerType = parcel.readString() ?: "proxy_v1"
         streamsPerCred = parcel.readString() ?: ""
+        wrapKey = parcel.readString() ?: ""
         advancedExpanded = parcel.readInt() != 0
     }
 
@@ -136,6 +144,7 @@ class TurnSettingsProxy : BaseObservable, Parcelable {
             watchdogTimeout = if (other.watchdogTimeout > 0) other.watchdogTimeout.toString() else ""
             peerType = other.peerType
             streamsPerCred = other.streamsPerCred.toString()
+            wrapKey = other.wrapKey
         }
     }
 
@@ -154,6 +163,7 @@ class TurnSettingsProxy : BaseObservable, Parcelable {
         dest.writeString(watchdogTimeout)
         dest.writeString(peerType)
         dest.writeString(streamsPerCred)
+        dest.writeString(wrapKey)
         dest.writeInt(if (advancedExpanded) 1 else 0)
     }
 
@@ -210,6 +220,7 @@ class TurnSettingsProxy : BaseObservable, Parcelable {
             peerType = peerType,
             streamsPerCred = parsedStreamsPerCred,
             watchdogTimeout = parsedWatchdogTimeout,
+            wrapKey = wrapKey.trim(),
         )
         if (enabled) {
             TurnSettings.validate(settings)

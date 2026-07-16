@@ -66,11 +66,11 @@ class TunnelEditorFragment : BaseFragment(), MenuProvider {
 
     private fun updateTurnPeerTypeSpinner() {
         binding?.apply {
-            val currentPeerType = config?.turn?.peerType ?: "proxy_v2"
+            val currentPeerType = config?.turn?.peerType ?: "proxy_v1"
             val peerTypeText = when (currentPeerType) {
                 "proxy_v1" -> getString(R.string.turn_peer_type_proxy_v1)
                 "wireguard" -> getString(R.string.turn_peer_type_wireguard)
-                else -> getString(R.string.turn_peer_type_proxy_v2)
+                else -> getString(R.string.turn_peer_type_proxy_v1)  // proxy_v2 normalized to v1 (hidden from UI)
             }
             if (turnPeerTypeSpinner.text.toString() != peerTypeText) {
                 turnPeerTypeSpinner.setText(peerTypeText, false)
@@ -154,11 +154,11 @@ class TunnelEditorFragment : BaseFragment(), MenuProvider {
                 config?.turn?.mode = if (position == 1) "wb" else "vk_link"
             }
 
-            val currentPeerType = config?.turn?.peerType ?: "proxy_v2"
+            val currentPeerType = config?.turn?.peerType ?: "proxy_v1"
             val peerTypeIndex = when (currentPeerType) {
-                "proxy_v1" -> 1
-                "wireguard" -> 2
-                else -> 0
+                "proxy_v1" -> 0
+                "wireguard" -> 1
+                else -> 0  // proxy_v2 normalized to proxy_v1
             }
             if (turnPeerTypeSpinner.text.isNotEmpty()) {
                 val currentText = turnPeerTypeSpinner.text.toString()
@@ -172,10 +172,20 @@ class TunnelEditorFragment : BaseFragment(), MenuProvider {
 
             turnPeerTypeSpinner.setOnItemClickListener { _, _, position, _ ->
                 config?.turn?.peerType = when (position) {
-                    1 -> "proxy_v1"
-                    2 -> "wireguard"
-                    else -> "proxy_v2"
+                    0 -> "proxy_v1"
+                    1 -> "wireguard"
+                    else -> "proxy_v1"
                 }
+            }
+
+            // WrapKey Generate button: creates a fresh 32-byte hex key
+            turnWrapKeyGenerateButton.setOnClickListener {
+                val bytes = ByteArray(32)
+                java.security.SecureRandom().nextBytes(bytes)
+                val hex = bytes.joinToString("") { "%02x".format(it) }
+                config?.turn?.wrapKey = hex
+                turnWrapKeyText.setText(hex)
+                Toast.makeText(requireContext(), "Generated fresh wrap key", Toast.LENGTH_SHORT).show()
             }
         }
     }
