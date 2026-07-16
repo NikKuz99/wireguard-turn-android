@@ -613,15 +613,6 @@
                                     android:layout_marginEnd="4dp"
                                     android:enabled="@{config.turn.enabled}"
                                     android:text="@string/turn_wrap_key_generate" />
-
-                                <com.google.android.material.button.MaterialButton
-                                    android:id="@+id/turn_wrap_key_qr_button"
-                                    style="@style/Widget.Material3.Button.TextButton"
-                                    android:layout_width="wrap_content"
-                                    android:layout_height="wrap_content"
-                                    android:layout_marginEnd="4dp"
-                                    android:enabled="@{config.turn.enabled &amp;&amp; !config.turn.wrapKey.empty}"
-                                    android:text="@string/turn_wrap_key_show_qr" />
                             </LinearLayout>
                         </LinearLayout>
 

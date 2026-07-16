@@ -300,9 +300,7 @@
     <string name="turn_wrap_key">Wrap key (optional)</string>
     <string name="turn_wrap_key_hint">64 hex chars (empty = disabled)</string>
     <string name="turn_wrap_key_generate">Generate</string>
-    <string name="turn_wrap_key_show_qr">Show QR</string>
     <string name="turn_wrap_key_clear">Clear</string>
-    <string name="turn_wrap_key_qr_dialog_title">Wrap key QR code</string>
     <string name="captcha_title">Verify You Are Human</string>
     <string name="captcha_loading">Loading captcha…</string>
     <string name="captcha_error">Failed to solve captcha. Please try again.</string>
