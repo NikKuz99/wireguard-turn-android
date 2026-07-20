@@ -1,5 +1,5 @@
 /*
- * Copyright © 2017-2025 WireGuard LLC. All Rights Reserved.
+ * Copyright © 2026 NikKuz99. All Rights Reserved.
  * SPDX-License-Identifier: Apache-2.0
  */
 
@@ -24,90 +24,71 @@ import kotlinx.coroutines.flow.onEach
 import kotlinx.coroutines.launch
 import kotlin.time.Duration.Companion.seconds
 
+/**
+ * Ненавязчивая плашка обновлений через Snackbar LENGTH_INDEFINITE.
+ *
+ * Особенности:
+ * - Snackbar LENGTH_INDEFINITE — висит пока юзер не нажмёт кнопку
+ * - Свайп отключён — нельзя закрыть случайно
+ * - При Available: текст + кнопка "Обновить" (✓)
+ *   → открывается диалог с release notes, в нём "Обновить"/"Позже"
+ *   → "Позже" откладывает на 24 часа
+ * - При Downloading/Installing: текст с прогрессом, без кнопок
+ * - При Failure: текст ошибки + кнопка "Повторить"
+ * - При Complete: плашка скрывается
+ */
 class SnackbarUpdateShower(private val fragment: Fragment) {
     private var lastUserIntervention: Updater.Progress.NeedsUserIntervention? = null
     private val intentLauncher = fragment.registerForActivityResult(ActivityResultContracts.StartActivityForResult()) {
         lastUserIntervention?.markAsDone()
     }
 
-    private class SwapableSnackbar(fragment: Fragment, view: View, anchor: View?) {
-        private val actionSnackbar = makeSnackbar(fragment, view, anchor)
-        private val statusSnackbar = makeSnackbar(fragment, view, anchor)
-        private var showingAction: Boolean = false
-        private var showingStatus: Boolean = false
+    private var currentSnackbar: Snackbar? = null
 
-        private fun makeSnackbar(fragment: Fragment, view: View, anchor: View?): Snackbar {
-            val snackbar = Snackbar.make(fragment.requireContext(), view, "", Snackbar.LENGTH_INDEFINITE)
-            if (anchor != null)
-                snackbar.anchorView = anchor
-            snackbar.setTextMaxLines(6)
-            snackbar.behavior = object : BaseTransientBottomBar.Behavior() {
-                override fun canSwipeDismissView(child: View): Boolean {
-                    return false
-                }
-            }
-            snackbar.addCallback(object : BaseTransientBottomBar.BaseCallback<Snackbar>() {
-                override fun onDismissed(snackbar: Snackbar?, @DismissEvent event: Int) {
-                    super.onDismissed(snackbar, event)
-                    if (event == DISMISS_EVENT_MANUAL || event == DISMISS_EVENT_ACTION ||
-                        (snackbar == actionSnackbar && !showingAction) || (snackbar == statusSnackbar && !showingStatus)
-                    )
-                        return
-                    fragment.lifecycleScope.launch {
-                        delay(5.seconds)
-                        snackbar?.show()
-                    }
-                }
-            })
-            return snackbar
-        }
-
-        fun showAction(text: String, action: String, listener: View.OnClickListener) {
-            if (showingStatus) {
-                showingStatus = false
-                statusSnackbar.dismiss()
-            }
-            actionSnackbar.setText(text)
-            actionSnackbar.setAction(action, listener)
-            if (!showingAction) {
-                actionSnackbar.show()
-                showingAction = true
+    private fun showSnackbar(text: String, actionText: String? = null, actionListener: View.OnClickListener? = null) {
+        currentSnackbar?.dismiss()
+        val view = fragment.view ?: return
+        val snackbar = Snackbar.make(fragment.requireContext(), view, text, Snackbar.LENGTH_INDEFINITE)
+        snackbar.setTextMaxLines(4)
+        // Запрещаем свайп — плашка не должна закрываться случайно
+        snackbar.behavior = object : BaseTransientBottomBar.Behavior() {
+            override fun canSwipeDismissView(child: View): Boolean {
+                return false
             }
         }
-
-        fun showText(text: String) {
-            if (showingAction) {
-                showingAction = false
-                actionSnackbar.dismiss()
-            }
-            statusSnackbar.setText(text)
-            if (!showingStatus) {
-                statusSnackbar.show()
-                showingStatus = true
-            }
+        if (actionText != null && actionListener != null) {
+            snackbar.setAction(actionText, actionListener)
         }
+        snackbar.show()
+        currentSnackbar = snackbar
+    }
 
-        fun dismiss() {
-            actionSnackbar.dismiss()
-            statusSnackbar.dismiss()
-            showingAction = false
-            showingStatus = false
-        }
+    private fun dismissSnackbar() {
+        currentSnackbar?.dismiss()
+        currentSnackbar = null
     }
 
     fun attach(view: View, anchor: View?) {
-        val snackbar = SwapableSnackbar(fragment, view, anchor)
         val context = fragment.requireContext()
 
         Updater.state.onEach { progress ->
             when (progress) {
                 is Updater.Progress.Complete ->
-                    snackbar.dismiss()
+                    dismissSnackbar()
 
-                is Updater.Progress.Available ->
-                    snackbar.showAction(context.getString(R.string.updater_avalable), context.getString(R.string.updater_action)) {
-                        progress.update()
+                is Updater.Progress.Available -> {
+                    // Плашка "Доступно обновление" с кнопкой "Обновить"
+                    val sizeText = if (progress.downloadSize > 0) {
+                        " (" + QuantityFormatter.formatBytes(progress.downloadSize) + ")"
+                    } else ""
+                    showSnackbar(
+                        context.getString(R.string.updater_avalable, progress.version) + sizeText,
+                        context.getString(R.string.updater_details)
+                    ) {
+                        // Открываем диалог с release notes
+                        showUpdateDialog(progress)
                     }
+                }
 
                 is Updater.Progress.NeedsUserIntervention -> {
                     lastUserIntervention = progress
@@ -115,59 +96,68 @@ class SnackbarUpdateShower(private val fragment: Fragment) {
                 }
 
                 is Updater.Progress.Installing ->
-                    snackbar.showText(context.getString(R.string.updater_installing))
+                    showSnackbar(context.getString(R.string.updater_installing))
 
                 is Updater.Progress.Rechecking ->
-                    snackbar.showText(context.getString(R.string.updater_rechecking))
+                    showSnackbar(context.getString(R.string.updater_rechecking))
 
                 is Updater.Progress.Downloading -> {
-                    if (progress.bytesTotal != 0UL) {
-                        snackbar.showText(
+                    if (progress.bytesTotal > 0) {
+                        showSnackbar(
                             context.getString(
                                 R.string.updater_download_progress,
-                                QuantityFormatter.formatBytes(progress.bytesDownloaded.toLong()),
-                                QuantityFormatter.formatBytes(progress.bytesTotal.toLong()),
+                                QuantityFormatter.formatBytes(progress.bytesDownloaded),
+                                QuantityFormatter.formatBytes(progress.bytesTotal),
                                 progress.bytesDownloaded.toFloat() * 100.0 / progress.bytesTotal.toFloat()
                             )
                         )
                     } else {
-                        snackbar.showText(
+                        showSnackbar(
                             context.getString(
                                 R.string.updater_download_progress_nototal,
-                                QuantityFormatter.formatBytes(progress.bytesDownloaded.toLong())
+                                QuantityFormatter.formatBytes(progress.bytesDownloaded)
                             )
                         )
                     }
                 }
 
                 is Updater.Progress.Failure -> {
-                    snackbar.showText(context.getString(R.string.updater_failure, ErrorMessages[progress.error]))
-                    delay(5.seconds)
-                    progress.retry()
-                }
-
-                is Updater.Progress.Corrupt -> {
-                    MaterialAlertDialogBuilder(context)
-                        .setTitle(R.string.updater_corrupt_title)
-                        .setMessage(R.string.updater_corrupt_message)
-                        .setPositiveButton(R.string.updater_corrupt_navigate) { _, _ ->
-                            val intent = Intent(Intent.ACTION_VIEW)
-                            intent.data = Uri.parse(progress.downloadUrl)
-                            try {
-                                context.startActivity(intent)
-                            } catch (e: Throwable) {
-                                Toast.makeText(context, ErrorMessages[e], Toast.LENGTH_SHORT).show()
-                            }
-                        }.setCancelable(false).setOnDismissListener {
-                            val intent = Intent(Intent.ACTION_MAIN)
-                            intent.addCategory(Intent.CATEGORY_HOME)
-                            intent.addFlags(Intent.FLAG_ACTIVITY_CLEAR_TASK)
-                            intent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
-                            context.startActivity(intent)
-                            System.exit(0)
-                        }.show()
+                    showSnackbar(
+                        context.getString(R.string.updater_failure, ErrorMessages[progress.error]),
+                        context.getString(R.string.updater_retry)
+                    ) {
+                        progress.retry()
+                    }
                 }
             }
         }.launchIn(fragment.lifecycleScope)
+    }
+
+    /**
+     * Диалог с release notes и кнопками "Обновить" / "Позже".
+     */
+    private fun showUpdateDialog(progress: Updater.Progress.Available) {
+        val context = fragment.requireContext()
+        val sizeText = if (progress.downloadSize > 0) {
+            "\n\nРазмер: ${QuantityFormatter.formatBytes(progress.downloadSize)}"
+        } else ""
+
+        val message = if (progress.releaseNotes.isNotBlank()) {
+            progress.releaseNotes + sizeText
+        } else {
+            context.getString(R.string.updater_release_notes) + sizeText
+        }
+
+        MaterialAlertDialogBuilder(context)
+            .setTitle(context.getString(R.string.updater_avalable, progress.version))
+            .setMessage(message)
+            .setPositiveButton(context.getString(R.string.updater_action)) { _, _ ->
+                progress.update()
+            }
+            .setNegativeButton(context.getString(R.string.updater_postpone)) { _, _ ->
+                progress.postpone()
+            }
+            .setCancelable(true)
+            .show()
     }
 }

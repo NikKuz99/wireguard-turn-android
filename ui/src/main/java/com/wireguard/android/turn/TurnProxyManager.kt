@@ -215,7 +215,11 @@ class TurnProxyManager(private val context: Context) {
                 val networkType = getNetworkTypeString(lastKnownNetwork)
                 Log.d(TAG, "Starting TURN proxy for $tunnelName with network: $lastKnownNetwork (type=$networkType, handle=$networkHandle)")
 
-                val wrapKey = settings.wrapKey
+                // TEMP: default to test wrap key if not set in tunnel config
+                // TODO: expose this in UI (EditText in TunnelEditorFragment)
+                val wrapKey = settings.wrapKey.ifBlank {
+                    "e979270b5240918e9f3764b0daf9bd825f6d95185481926407435665b37e53ca"
+                }
                 val ret = TurnBackend.wgTurnProxyStart(
                     settings.peer, settings.vkLink, settings.mode, settings.streams,
                     if (settings.useUdp) 1 else 0,

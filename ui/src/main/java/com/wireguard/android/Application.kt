@@ -94,23 +94,21 @@ class Application : android.app.Application() {
         rootShell = RootShell(applicationContext)
         toolsInstaller = ToolsInstaller(applicationContext, rootShell)
         preferencesDataStore = PreferenceDataStoreFactory.create { applicationContext.preferencesDataStoreFile("settings") }
-        if (Build.VERSION.SDK_INT < Build.VERSION_CODES.Q) {
-            runBlocking {
-                AppCompatDelegate.setDefaultNightMode(if (UserKnobs.darkTheme.first()) AppCompatDelegate.MODE_NIGHT_YES else AppCompatDelegate.MODE_NIGHT_NO)
-            }
-            UserKnobs.darkTheme.onEach {
-                val newMode = if (it) {
-                    AppCompatDelegate.MODE_NIGHT_YES
-                } else {
-                    AppCompatDelegate.MODE_NIGHT_NO
-                }
-                if (AppCompatDelegate.getDefaultNightMode() != newMode) {
-                    AppCompatDelegate.setDefaultNightMode(newMode)
-                }
-            }.launchIn(coroutineScope)
-        } else {
-            AppCompatDelegate.setDefaultNightMode(AppCompatDelegate.MODE_NIGHT_FOLLOW_SYSTEM)
+        // Тёмная тема по умолчанию на всех версиях Android.
+        // Пользователь может выключить в настройках.
+        runBlocking {
+            AppCompatDelegate.setDefaultNightMode(if (UserKnobs.darkTheme.first()) AppCompatDelegate.MODE_NIGHT_YES else AppCompatDelegate.MODE_NIGHT_NO)
         }
+        UserKnobs.darkTheme.onEach {
+            val newMode = if (it) {
+                AppCompatDelegate.MODE_NIGHT_YES
+            } else {
+                AppCompatDelegate.MODE_NIGHT_NO
+            }
+            if (AppCompatDelegate.getDefaultNightMode() != newMode) {
+                AppCompatDelegate.setDefaultNightMode(newMode)
+            }
+        }.launchIn(coroutineScope)
         tunnelManager = TunnelManager(
             FileConfigStore(applicationContext),
             TurnSettingsStore(applicationContext),
@@ -134,8 +132,9 @@ class Application : android.app.Application() {
                 Log.e(TAG, Log.getStackTraceString(e))
             }
         }
-        // Updater.monitorForUpdates()  // Disabled for fork
-        // If you want to enable updates, set up your own update server and configure Updater.kt
+        // Включаем проверку обновлений с GitHub Releases
+        // (только для release-сборок; в DEBUG отключено внутри monitorForUpdates)
+        Updater.monitorForUpdates()
 
         if (BuildConfig.DEBUG) {
             StrictMode.setVmPolicy(VmPolicy.Builder().detectAll().penaltyLog().build())

@@ -187,6 +187,27 @@ class TunnelEditorFragment : BaseFragment(), MenuProvider {
                 turnWrapKeyText.setText(hex)
                 Toast.makeText(requireContext(), "Generated fresh wrap key", Toast.LENGTH_SHORT).show()
             }
+
+            // WrapKey Show QR button: display QR code of current key for sharing
+            turnWrapKeyQrButton.setOnClickListener {
+                val key = config?.turn?.wrapKey
+                if (key.isNullOrBlank()) {
+                    Toast.makeText(requireContext(), "Generate or enter a key first", Toast.LENGTH_SHORT).show()
+                    return@setOnClickListener
+                }
+                val qrBmp = com.wireguard.android.util.QrCodeEncoder.encode(key, 768)
+                val imageView = android.widget.ImageView(requireContext()).apply {
+                    setImageBitmap(qrBmp)
+                    val pad = (resources.displayMetrics.density * 16).toInt()
+                    setPadding(pad, pad, pad, pad)
+                    setBackgroundColor(android.graphics.Color.WHITE)
+                }
+                androidx.appcompat.app.AlertDialog.Builder(requireContext())
+                    .setTitle(R.string.turn_wrap_key_qr_dialog_title)
+                    .setView(imageView)
+                    .setPositiveButton(android.R.string.ok, null)
+                    .show()
+            }
         }
     }
 

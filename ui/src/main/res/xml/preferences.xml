@@ -7,6 +7,9 @@
     <com.wireguard.android.preference.VersionPreference
         android:icon="@mipmap/ic_launcher"
         android:key="version" />
+    <com.wireguard.android.preference.UpdaterPreference
+        android:key="updater"
+        android:singleLineTitle="false" />
     <CheckBoxPreference
         android:defaultValue="false"
         android:key="restore_on_boot"
@@ -22,7 +25,7 @@
         android:summary="@string/log_viewer_pref_summary"
         android:title="@string/log_viewer_pref_title" />
     <CheckBoxPreference
-        android:defaultValue="false"
+        android:defaultValue="true"
         android:key="dark_theme"
         android:singleLineTitle="false"
         android:summaryOff="@string/dark_theme_summary_off"
@@ -44,5 +47,4 @@
         android:summaryOff="@string/allow_remote_control_intents_summary_off"
         android:summaryOn="@string/allow_remote_control_intents_summary_on"
         android:title="@string/allow_remote_control_intents_title" />
-    <com.wireguard.android.preference.DonatePreference android:singleLineTitle="false" />
 </androidx.preference.PreferenceScreen>

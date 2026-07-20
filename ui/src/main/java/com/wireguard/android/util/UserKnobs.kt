@@ -7,6 +7,7 @@ package com.wireguard.android.util
 
 import androidx.datastore.preferences.core.booleanPreferencesKey
 import androidx.datastore.preferences.core.edit
+import androidx.datastore.preferences.core.longPreferencesKey
 import androidx.datastore.preferences.core.stringPreferencesKey
 import androidx.datastore.preferences.core.stringSetPreferencesKey
 import com.wireguard.android.Application
@@ -38,7 +39,9 @@ object UserKnobs {
     private val DARK_THEME = booleanPreferencesKey("dark_theme")
     val darkTheme: Flow<Boolean>
         get() = Application.getPreferencesDataStore().data.map {
-            it[DARK_THEME] ?: false
+            // По умолчанию — тёмная тема (true)
+            // Пользователь может выключить в настройках
+            it[DARK_THEME] ?: true
         }
 
     suspend fun setDarkTheme(on: Boolean) {
@@ -116,6 +119,21 @@ object UserKnobs {
                 it.remove(UPDATER_NEWER_VERSION_CONSENTED)
             else
                 it[UPDATER_NEWER_VERSION_CONSENTED] = newerVersionConsented
+        }
+    }
+
+    private val UPDATER_POSTPONED_UNTIL = longPreferencesKey("updater_postponed_until")
+    val updaterPostponedUntil: Flow<Long?>
+        get() = Application.getPreferencesDataStore().data.map {
+            it[UPDATER_POSTPONED_UNTIL]
+        }
+
+    suspend fun setUpdaterPostponedUntil(timestamp: Long?) {
+        Application.getPreferencesDataStore().edit {
+            if (timestamp == null)
+                it.remove(UPDATER_POSTPONED_UNTIL)
+            else
+                it[UPDATER_POSTPONED_UNTIL] = timestamp
         }
     }
 }
