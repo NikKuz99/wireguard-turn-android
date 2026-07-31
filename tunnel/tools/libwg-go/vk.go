@@ -97,7 +97,8 @@ func getCustomNetDialer() net.Dialer {
 	}
 }
 
-// Custom dial context that resolves domains via DNS cache
+// Custom dial context that resolves domains via VK hosts manager
+// (baseline + dynamic + metrics, with DNS fallback)
 func getCustomDialContext(ctx context.Context, network, addr string) (net.Conn, error) {
 	host, port, err := net.SplitHostPort(addr)
 	if err != nil {
@@ -105,13 +106,26 @@ func getCustomDialContext(ctx context.Context, network, addr string) (net.Conn, 
 		port = "443"
 	}
 
-	resolvedIP, err := hostCache.Resolve(ctx, host)
+	// Если это уже IP — не резолвим
+	if ip := net.ParseIP(host); ip != nil {
+		dialer := getCustomNetDialer()
+		return dialer.DialContext(ctx, network, addr)
+	}
+
+	resolvedIP, err := vkHosts.Resolve(ctx, host)
 	if err != nil {
 		return nil, fmt.Errorf("DNS resolution failed for %s: %w", host, err)
 	}
 
 	dialer := getCustomNetDialer()
-	return dialer.DialContext(ctx, network, net.JoinHostPort(resolvedIP, port))
+	start := time.Now()
+	conn, err := dialer.DialContext(ctx, network, net.JoinHostPort(resolvedIP, port))
+	if err != nil {
+		vkHosts.RecordFailure(host, resolvedIP)
+		return nil, err
+	}
+	vkHosts.RecordSuccess(host, resolvedIP, time.Since(start))
+	return conn, nil
 }
 
 // fetchVkCreds performs the actual VK/OK API calls to fetch credentials
@@ -449,7 +463,7 @@ func getTokenChain(ctx context.Context, link string, creds VKCredentials, client
 	host, port, err := net.SplitHostPort(address)
 	if err == nil {
 		if ip := net.ParseIP(host); ip == nil {
-			resolvedIP, err := hostCache.Resolve(ctx, host)
+			resolvedIP, err := vkHosts.Resolve(ctx, host)
 			if err != nil {
 				turnLog("[TURN DNS] Warning: failed to resolve TURN server %s: %v", host, err)
 			} else {

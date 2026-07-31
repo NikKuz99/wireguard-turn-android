@@ -536,14 +536,14 @@ func wgTurnProxyStart(peerAddrC *C.char, vklinkC *C.char, modeC *C.char, n C.int
 	if err == nil {
 		if ip := net.ParseIP(host); ip == nil {
 			// It's a domain name, resolve it
-			resolvedIP, err := hostCache.Resolve(context.Background(), host)
+			resolvedIP, err := vkHosts.Resolve(context.Background(), host)
 			if err != nil {
 				turnLog("[DNS] Warning: failed to resolve peer: %v, using original", err)
 				peer, err = net.ResolveUDPAddr("udp", peerAddr)
 				if err != nil { return -1 }
 			} else {
 				peerAddr = net.JoinHostPort(resolvedIP, port)
-				//turnLog("[DNS] Resolved peer %s -> %s", host, resolvedIP)
+				turnLog("[DNS] Resolved peer %s -> %s", host, resolvedIP)
 				peer, err = net.ResolveUDPAddr("udp", peerAddr)
 				if err != nil { return -1 }
 			}
@@ -588,6 +588,9 @@ func wgTurnProxyStart(peerAddrC *C.char, vklinkC *C.char, modeC *C.char, n C.int
 		go streams[i].run(link, peer, udp != 0, ok, turnIp, turnPort, peerType)
 		time.Sleep(200 * time.Millisecond)
 	}
+
+	// Start VK hosts metrics collector (background)
+	vkHosts.StartMetricsCollector(ctx)
 
 	go func() {
 		nStreams := int(len(streams))
