@@ -124,23 +124,29 @@ func (vh *VkHosts) allIPs(domain string) []string {
 // Resolve выбирает лучший IP для домена
 //
 // Логика:
-// 1. Если DNS работает — попробовать резолвнуть через hostCache
-//    (cascading DNS: system → Yandex → Google)
-//    Если удалось — вернуть IP из DNS + обновить dynamic
+// 1. Если DNS работает — попробовать резолвнуть через hostCache.ResolveAll
+//    (cascading DNS: system → Yandex → Google, возвращает ВСЕ A-записи)
+//    Если удалось — обновить dynamic всеми IP + вернуть лучший по метрикам
 // 2. Если DNS не работает — выбрать лучший из baseline+dynamic по метрикам
 func (vh *VkHosts) Resolve(ctx context.Context, domain string) (string, error) {
-	// 1. Попытка через DNS (cascading resolver)
+	// 1. Попытка через DNS (cascading resolver, все A-записи)
 	if vh.dnsOK {
-		ip, err := hostCache.Resolve(ctx, domain)
-		if err == nil {
-			// DNS сработал — обновляем dynamic и возвращаем
+		ips, err := hostCache.ResolveAll(ctx, domain)
+		if err == nil && len(ips) > 0 {
+			// DNS сработал — обновляем dynamic всеми IP
 			vh.mu.Lock()
-			if !contains(vh.dynamic[domain], ip) {
-				vh.dynamic[domain] = append(vh.dynamic[domain], ip)
-			}
+			old := vh.dynamic[domain]
+			vh.dynamic[domain] = mergeUnique(old, ips)
+			vh.dnsOK = true
 			vh.lastDNS = time.Now()
+			addedCount := len(vh.dynamic[domain]) - len(old)
+			if addedCount > 0 {
+				turnLog("[VKHosts] DNS added %d new IPs for %s (total: %d): %v",
+					addedCount, domain, len(vh.dynamic[domain]), vh.dynamic[domain])
+			}
 			vh.mu.Unlock()
-			return ip, nil
+			// Возвращаем лучший по метрикам из всех (dynamic + baseline)
+			return vh.selectBestIP(domain)
 		}
 		// DNS не сработал
 		vh.mu.Lock()
@@ -150,6 +156,11 @@ func (vh *VkHosts) Resolve(ctx context.Context, domain string) (string, error) {
 	}
 
 	// 2. Выбор лучшего IP из baseline + dynamic
+	return vh.selectBestIP(domain)
+}
+
+// selectBestIP выбирает лучший IP из baseline + dynamic по метрикам
+func (vh *VkHosts) selectBestIP(domain string) (string, error) {
 	ips := vh.allIPs(domain)
 	if len(ips) == 0 {
 		return "", fmt.Errorf("no IPs available for %s", domain)
@@ -190,6 +201,25 @@ func (vh *VkHosts) Resolve(ctx context.Context, domain string) (string, error) {
 	}
 
 	return bestIP, nil
+}
+
+// mergeUnique объединяет два слайса IP без дубликатов
+func mergeUnique(a, b []string) []string {
+	seen := make(map[string]bool)
+	result := make([]string, 0, len(a)+len(b))
+	for _, ip := range a {
+		if !seen[ip] {
+			seen[ip] = true
+			result = append(result, ip)
+		}
+	}
+	for _, ip := range b {
+		if !seen[ip] {
+			seen[ip] = true
+			result = append(result, ip)
+		}
+	}
+	return result
 }
 
 // UpdateDynamic обновляет dynamic IP-список для домена (из DNS ответа)
@@ -358,13 +388,7 @@ func contains(slice []string, item string) bool {
 	return false
 }
 
-// resolveAllViaDNS резолвит домен через cascading DNS и возвращает все IP
+// resolveAllViaDNS резолвит домен через cascading DNS и возвращает ВСЕ A-записи
 func resolveAllViaDNS(ctx context.Context, domain string) ([]string, error) {
-	// Используем существующий cascading resolver, но парсим все A-записи
-	// Пока возвращает один IP (как hostCache.Resolve), но в будущем можно расширить
-	ip, err := hostCache.Resolve(ctx, domain)
-	if err != nil {
-		return nil, err
-	}
-	return []string{ip}, nil
+	return hostCache.ResolveAll(ctx, domain)
 }
