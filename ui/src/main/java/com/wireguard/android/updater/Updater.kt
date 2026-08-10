@@ -167,9 +167,26 @@ object Updater {
     private val mutableState = MutableStateFlow<Progress>(Progress.Complete)
     val state = mutableState.asStateFlow()
 
+    private var lastProgressEmitTime = 0L
+    private val PROGRESS_THROTTLE_MS = 500L
+
     private suspend fun emitProgress(progress: Progress, force: Boolean = false) {
-        if (force || mutableState.firstOrNull()?.javaClass != progress.javaClass)
+        // Always emit on state CLASS change (e.g. Complete -> Downloading)
+        val current = mutableState.value
+        val classChanged = current::class != progress::class
+        if (classChanged || force) {
             mutableState.emit(progress)
+            lastProgressEmitTime = System.currentTimeMillis()
+            return
+        }
+        // For Downloading state, throttle to avoid UI spam (every 500ms)
+        if (progress is Progress.Downloading) {
+            val now = System.currentTimeMillis()
+            if (now - lastProgressEmitTime >= PROGRESS_THROTTLE_MS) {
+                mutableState.emit(progress)
+                lastProgressEmitTime = now
+            }
+        }
     }
 
     /**
@@ -370,7 +387,7 @@ object Updater {
                                     throw IOException("File too large: $downloaded bytes")
                                 }
 
-                                emitProgress(Progress.Downloading(downloaded, totalSize), false)
+                                emitProgress(Progress.Downloading(downloaded, totalSize), true)
                             }
                         }
                     }

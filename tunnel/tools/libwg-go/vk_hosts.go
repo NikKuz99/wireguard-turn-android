@@ -137,12 +137,16 @@ func (vh *VkHosts) Resolve(ctx context.Context, domain string) (string, error) {
 			vh.mu.Lock()
 			old := vh.dynamic[domain]
 			vh.dynamic[domain] = mergeUnique(old, ips)
+			wasDNSFailed := !vh.dnsOK
 			vh.dnsOK = true
 			vh.lastDNS = time.Now()
 			addedCount := len(vh.dynamic[domain]) - len(old)
 			if addedCount > 0 {
 				turnLog("[VKHosts] DNS added %d new IPs for %s (total: %d): %v",
 					addedCount, domain, len(vh.dynamic[domain]), vh.dynamic[domain])
+			}
+			if wasDNSFailed {
+				turnLog("[VKHosts] DNS recovered for %s — switching back from baseline to DNS mode", domain)
 			}
 			vh.mu.Unlock()
 			// Возвращаем лучший по метрикам из всех (dynamic + baseline)
@@ -335,11 +339,22 @@ func (vh *VkHosts) collectMetrics(ctx context.Context) {
 	}
 	vh.mu.RUnlock()
 
-	// Пытаемся обновить через DNS
+	// Пытаемся обновить через DNS.
+	// ВАЖНО: используем отдельный ctx с timeout для каждого домена,
+	// чтобы отмена одного запроса не отменяла остальные.
 	for domain := range domains {
-		ips, err := resolveAllViaDNS(ctx, domain)
+		select {
+		case <-ctx.Done():
+			return
+		default:
+		}
+		dnsCtx, dnsCancel := context.WithTimeout(context.Background(), 10*time.Second)
+		ips, err := resolveAllViaDNS(dnsCtx, domain)
+		dnsCancel()
 		if err == nil && len(ips) > 0 {
 			vh.UpdateDynamic(domain, ips)
+			// Если DNS работает — помечаем что DNS снова доступен
+			vh.MarkDNSWorking()
 		}
 	}
 

@@ -37,6 +37,7 @@ class CaptchaActivity : AppCompatActivity() {
 
     private var previousNetwork: Network? = null
     private var didBindNetwork = false
+    private var webView: WebView? = null
 
     companion object {
         private const val TAG = "WireGuard/CaptchaActivity"
@@ -301,6 +302,7 @@ class CaptchaActivity : AppCompatActivity() {
             }
         }
 
+        this.webView = webView
         setContentView(webView)
         webView.loadUrl(redirectUri)
     }
@@ -679,6 +681,13 @@ class CaptchaActivity : AppCompatActivity() {
     }
 
     override fun onDestroy() {
+        // Destroy WebView to prevent memory leaks
+        webView?.apply {
+            stopLoading()
+            removeJavascriptInterface("AndroidCaptcha")
+            destroy()
+        }
+        webView = null
         restoreNetworkBinding()
         super.onDestroy()
         deliverResult("")

@@ -268,7 +268,10 @@
     <string name="updater_pref_available">Доступно обновление: v%s</string>
     <string name="updater_pref_size">Размер: %s</string>
     <string name="updater_pref_checking">Проверка обновлений…</string>
-    <string name="updater_pref_downloading">Обновляю приложение… (нажмите для отмены)</string>
+    <string name="updater_pref_downloading">Обновляю приложение…</string>
+    <string name="updater_pref_tap_cancel">Нажмите для отмены</string>
+    <string name="updater_pref_cancel">Отменить обновление</string>
+    <string name="updater_pref_cancel_confirm">Отменить загрузку? Частично скачанный файл будет удалён.</string>
     <string name="updater_pref_installing">Установка обновления…</string>
     <string name="updater_pref_confirm">Подтвердите установку в системном диалоге</string>
     <string name="updater_pref_failed">Ошибка обновления. Нажмите для повтора.</string>

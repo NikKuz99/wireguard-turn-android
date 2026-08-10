@@ -4,10 +4,14 @@
  */
 package com.wireguard.android.preference
 
+import android.app.AlertDialog
 import android.content.Context
 import android.util.AttributeSet
 import android.util.Log
+import android.view.View
+import android.widget.TextView
 import androidx.preference.Preference
+import androidx.preference.PreferenceViewHolder
 import com.wireguard.android.R
 import com.wireguard.android.updater.Updater
 import com.wireguard.android.util.applicationScope
@@ -31,6 +35,9 @@ class UpdaterPreference(context: Context, attrs: AttributeSet?) : Preference(con
         private const val TAG = "WireGuard/UpdaterPreference"
     }
 
+    private var titleView: TextView? = null
+    private var summaryView: TextView? = null
+
     init {
         // Сначала применяем текущее состояние
         updateState(Updater.state.value)
@@ -40,6 +47,16 @@ class UpdaterPreference(context: Context, attrs: AttributeSet?) : Preference(con
             Log.d(TAG, "State changed: ${progress::class.simpleName}")
             updateState(progress)
         }.launchIn(applicationScope)
+    }
+
+    override fun onBindViewHolder(holder: PreferenceViewHolder) {
+        super.onBindViewHolder(holder)
+        // Keep references to title/summary views for direct updates
+        titleView = holder.findViewById(android.R.id.title) as? TextView
+        summaryView = holder.findViewById(android.R.id.summary) as? TextView
+        Log.d(TAG, "onBindViewHolder: titleView=$titleView, summaryView=$summaryView")
+        // Apply current state immediately
+        updateState(Updater.state.value)
     }
 
     private fun updateState(progress: Updater.Progress) {
@@ -63,12 +80,13 @@ class UpdaterPreference(context: Context, attrs: AttributeSet?) : Preference(con
             }
             is Updater.Progress.Downloading -> {
                 title = context.getString(R.string.updater_pref_downloading)
-                summary = if (progress.bytesTotal > 0) {
+                val progressText = if (progress.bytesTotal > 0) {
                     "${formatBytes(progress.bytesDownloaded)} / ${formatBytes(progress.bytesTotal)} " +
                     "(${progress.bytesDownloaded * 100 / progress.bytesTotal}%)"
                 } else {
                     formatBytes(progress.bytesDownloaded)
                 }
+                summary = progressText + "\n" + context.getString(R.string.updater_pref_tap_cancel)
                 isEnabled = true // нажатие = отмена
             }
             is Updater.Progress.Installing -> {
@@ -87,6 +105,13 @@ class UpdaterPreference(context: Context, attrs: AttributeSet?) : Preference(con
                 isEnabled = true
             }
         }
+        // Directly update views if they are bound (faster than notifyChanged)
+        titleView?.text = title
+        summaryView?.apply {
+            text = summary
+            visibility = if (summary.isNullOrEmpty()) View.GONE else View.VISIBLE
+        }
+        // Also notifyChanged() as fallback (for re-bind scenarios)
         notifyChanged()
     }
 
@@ -103,8 +128,16 @@ class UpdaterPreference(context: Context, attrs: AttributeSet?) : Preference(con
                 state.update()
             }
             is Updater.Progress.Downloading -> {
-                Log.d(TAG, "Cancelling download")
-                Updater.cancelUpdate()
+                Log.d(TAG, "Showing cancel confirmation dialog")
+                AlertDialog.Builder(context)
+                    .setTitle(R.string.updater_pref_cancel)
+                    .setMessage(R.string.updater_pref_cancel_confirm)
+                    .setPositiveButton(android.R.string.ok) { _, _ ->
+                        Log.d(TAG, "User confirmed cancel")
+                        Updater.cancelUpdate()
+                    }
+                    .setNegativeButton(android.R.string.cancel, null)
+                    .show()
             }
             is Updater.Progress.Failure -> {
                 Log.d(TAG, "Retrying after failure")
