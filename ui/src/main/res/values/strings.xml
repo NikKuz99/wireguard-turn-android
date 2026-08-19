@@ -111,9 +111,6 @@
     <string name="tv_select_a_storage_drive">Select a storage drive</string>
     <string name="tv_no_file_picker">Please install a file management utility to browse files</string>
     <string name="tv_add_tunnel_get_started">Add a tunnel to get started</string>
-    <string name="donate_title">♥ Donate to the CMD WG turn Project</string>
-    <string name="donate_summary">Every contribution helps</string>
-    <string name="donate_google_play_disappointment">Thank you for supporting the CMD WG turn Project!\n\nUnfortunately, due to Google\'s policies, we\'re not allowed to link to the part of the project webpage where you can make a donation. Hopefully you can figure this out!\n\nThanks again for your contribution.</string>
     <string name="disable_config_export_title">Disable config exporting</string>
     <string name="disable_config_export_description">Disabling config exporting makes private keys less accessible</string>
     <string name="dns_servers">DNS servers</string>
@@ -155,16 +152,6 @@
     <string name="log_viewer_pref_title">View application log</string>
     <string name="log_viewer_title">Log</string>
     <string name="logcat_error">Unable to run logcat: </string>
-    <string name="module_enabler_disabled_summary">The experimental kernel module can improve performance</string>
-    <string name="module_enabler_disabled_title">Enable kernel module backend</string>
-    <string name="module_enabler_enabled_summary">The slower userspace backend may improve stability</string>
-    <string name="module_enabler_enabled_title">Disable kernel module backend</string>
-    <string name="module_installer_error">Something went wrong. Please try again</string>
-    <string name="module_installer_initial">The experimental kernel module can improve performance</string>
-    <string name="module_installer_not_found">No modules are available for your device</string>
-    <string name="module_installer_title">Download and install kernel module</string>
-    <string name="module_installer_working">Downloading and installing…</string>
-    <string name="module_version_error">Unable to determine kernel module version</string>
     <string name="mtu">MTU</string>
     <string name="multiple_tunnels_summary_off">Turning on one tunnel will turn off others</string>
     <string name="multiple_tunnels_summary_on">Multiple tunnels may be turned on simultaneously</string>
@@ -204,15 +191,6 @@
     <string name="success_application_will_restart">Success. The application will now restart…</string>
     <string name="toggle_all">Toggle All</string>
     <string name="toggle_error">Error toggling CMD WG turn tunnel: %s</string>
-    <string name="tools_installer_already">wg and wg-quick are already installed</string>
-    <string name="tools_installer_failure">Unable to install command-line tools (no root?)</string>
-    <string name="tools_installer_initial">Install optional tools for scripting</string>
-    <string name="tools_installer_initial_magisk">Install optional tools for scripting as Magisk module</string>
-    <string name="tools_installer_initial_system">Install optional tools for scripting into the system partition</string>
-    <string name="tools_installer_success_magisk">wg and wg-quick installed as a Magisk module (reboot required)</string>
-    <string name="tools_installer_success_system">wg and wg-quick installed into the system partition</string>
-    <string name="tools_installer_title">Install command line tools</string>
-    <string name="tools_installer_working">Installing wg and wg-quick</string>
     <string name="tools_unavailable_error">Required tools unavailable</string>
     <string name="transfer">Transfer</string>
     <string name="transfer_bytes">%d B</string>
@@ -234,7 +212,6 @@
     <string name="tunnel_rename_error">Unable to rename tunnel: %s</string>
     <string name="tunnel_rename_success">Successfully renamed tunnel to “%s”</string>
     <string name="type_name_go_userspace">Go userspace</string>
-    <string name="type_name_kernel_module">Kernel module</string>
     <string name="unknown_error">Unknown error</string>
     <string name="updater_avalable">Update available: v%s</string>
     <string name="updater_action">Update</string>
@@ -323,4 +300,8 @@
     <string name="captcha_loading">Loading captcha…</string>
     <string name="captcha_error">Failed to solve captcha. Please try again.</string>
     <string name="captcha_instructions">Please complete the verification to continue</string>
+
+    <!-- Strings still referenced by code (kernel module backend) -->
+    <string name="type_name_kernel_module">Kernel module</string>
+    <string name="module_version_error">Unable to determine kernel module version</string>
 </resources>

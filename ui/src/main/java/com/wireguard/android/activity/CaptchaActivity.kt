@@ -57,7 +57,9 @@ class CaptchaActivity : AppCompatActivity() {
             "api.vk.com" to "87.240.129.140",
             "calls.okcdn.ru" to "155.212.204.12",
             "static.vk.ru" to "87.240.129.133",
-            "static.vk.com" to "87.240.129.133"
+            "static.vk.com" to "87.240.129.133",
+            "st.vk.ru" to "87.240.129.133",
+            "st.vk.com" to "87.240.129.133"
         )
 
         fun solveCaptcha(context: Context, redirectUri: String): String {
@@ -80,7 +82,7 @@ class CaptchaActivity : AppCompatActivity() {
          * Injected into HTML head before any other script runs.
          */
         private const val FETCH_INTERCEPT_SCRIPT_BODY = """(function(){
-            var vkDomains = ["api.vk.ru","api.vk.com","login.vk.ru","login.vk.com","id.vk.ru","id.vk.com","calls.okcdn.ru","static.vk.ru","static.vk.com","oauth.vk.com"];
+            var vkDomains = ["api.vk.ru","api.vk.com","login.vk.ru","login.vk.com","id.vk.ru","id.vk.com","calls.okcdn.ru","static.vk.ru","static.vk.com","st.vk.ru","st.vk.com","oauth.vk.com"];
             function rewriteUrl(url){
                 if(typeof url!=="string")return url;
                 for(var i=0;i<vkDomains.length;i++){
@@ -90,21 +92,49 @@ class CaptchaActivity : AppCompatActivity() {
                 }
                 return url;
             }
-            function bodyToQuery(body){
-                if(!body)return "";
-                if(typeof body==="string")return body;
-                try{
-                    if(body instanceof URLSearchParams)return body.toString();
-                    if(body instanceof FormData){
-                        var parts=[];
-                        var entries=body.entries();
-                        for(var p=entries.next();!p.done;p=entries.next()){
-                            parts.push(encodeURIComponent(p.value[0])+"="+encodeURIComponent(p.value[1]));
+            // Parse body into array of [key, value] pairs, properly URL-encode values.
+            // Handles: URLSearchParams, FormData, string ("k=v&k2=v2"), ReadableStream (no — skip).
+            function parseBody(body){
+                var pairs=[];
+                if(!body)return pairs;
+                if(typeof body==="string"){
+                    var parts=body.split("&");
+                    for(var i=0;i<parts.length;i++){
+                        var eq=parts[i].indexOf("=");
+                        if(eq>0){
+                            pairs.push([parts[i].substring(0,eq),parts[i].substring(eq+1)]);
+                        }else if(parts[i]){
+                            pairs.push([parts[i],""]);
                         }
-                        return parts.join("&");
+                    }
+                    return pairs;
+                }
+                try{
+                    if(body instanceof URLSearchParams){
+                        var iter=body.entries();
+                        for(var p=iter.next();!p.done;p=iter.next()){
+                            pairs.push([p.value[0],p.value[1]]);
+                        }
+                        return pairs;
+                    }
+                    if(body instanceof FormData){
+                        var fiter=body.entries();
+                        for(var f=fiter.next();!f.done;f=fiter.next()){
+                            pairs.push([f.value[0],f.value[1]]);
+                        }
+                        return pairs;
                     }
                 }catch(e){}
-                try{return String(body);}catch(e){return "";}
+                return pairs;
+            }
+            // Build query string with proper encodeURIComponent on values.
+            // This is critical for captcha_settings (base64 with /+=) and other special chars.
+            function buildQuery(pairs){
+                var q=[];
+                for(var i=0;i<pairs.length;i++){
+                    q.push(encodeURIComponent(pairs[i][0])+"="+encodeURIComponent(pairs[i][1]));
+                }
+                return q.join("&");
             }
             function appendQuery(url,query){
                 if(!query)return url;
@@ -116,14 +146,15 @@ class CaptchaActivity : AppCompatActivity() {
                 if(typeof input==="string"){input=rewriteUrl(input);}
                 else if(input&&input.url){input.url=rewriteUrl(input.url);}
                 if(init&&(init.method==="POST"||init.method==="PUT")){
-                    var bodyQ=bodyToQuery(init.body);
+                    var pairs=parseBody(init.body);
+                    var bodyQ=buildQuery(pairs);
                     if(bodyQ){
                         if(typeof input==="string"){input=appendQuery(input,bodyQ);}
                         else if(input&&input.url){input.url=appendQuery(input.url,bodyQ);}
                     }
                     init.method="GET";
                     try{delete init.body;}catch(e){init.body=undefined;}
-                    console.log("[FW] fetch POST->GET: "+(typeof input==="string"?input:input.url)+" body="+bodyQ.substring(0,200));
+                    console.log("[FW] fetch POST->GET: "+(typeof input==="string"?input:input.url)+" params="+pairs.length);
                 }
                 return origFetch.call(this,input,init);
             };}
@@ -137,10 +168,11 @@ class CaptchaActivity : AppCompatActivity() {
             };
             XMLHttpRequest.prototype.send=function(body){
                 if(this._capMethod==="POST"||this._capMethod==="PUT"){
-                    var bodyQ=bodyToQuery(body);
+                    var pairs=parseBody(body);
+                    var bodyQ=buildQuery(pairs);
                     if(bodyQ){
                         var newUrl=appendQuery(this._capUrl,bodyQ);
-                        console.log("[FW] XHR POST->GET: "+newUrl+" body="+bodyQ.substring(0,200));
+                        console.log("[FW] XHR POST->GET: "+newUrl.substring(0,200)+" params="+pairs.length);
                         try{
                             origOpen.call(this,"GET",newUrl,true);
                         }catch(e){console.error("[FW] XHR reopen failed: "+e.message);}
@@ -276,9 +308,11 @@ class CaptchaActivity : AppCompatActivity() {
                     // Check path FIRST — rewritten relative URLs go to id.vk.ru
                     // but content is on static.vk.ru or api.vk.ru
                     if (reqPath.startsWith("/vkid/")) {
-                        val staticIp = vkDomainToIp["static.vk.ru"] ?: "87.240.129.133"
-                        Log.d(TAG, "Routing /vkid/ to static.vk.ru: " + reqPath)
-                        return proxyRequest(uri, staticIp, "static.vk.ru", request)
+                        // Use original host if it's a known VK domain, otherwise default to static.vk.ru
+                        val targetHost = if (vkDomainToIp.containsKey(host)) host else "static.vk.ru"
+                        val staticIp = vkDomainToIp[targetHost] ?: "87.240.129.133"
+                        Log.d(TAG, "Routing /vkid/ to " + targetHost + ": " + reqPath)
+                        return proxyRequest(uri, staticIp, targetHost, request)
                     }
                     if (reqPath.startsWith("/method/")) {
                         val apiIp = vkDomainToIp["api.vk.ru"] ?: "87.240.129.140"
@@ -445,8 +479,11 @@ class CaptchaActivity : AppCompatActivity() {
                 return@replace match.value
             }
             scriptCount++
-            Log.d(TAG, "Inlining script: " + src + " -> path=" + resourcePath)
-            val content = downloadResource(staticIp, "static.vk.ru", resourcePath)
+            // Extract original host from src URL (e.g., st.vk.ru, static.vk.ru)
+            val origHost = extractHost(src) ?: "static.vk.ru"
+            val resourceIp = vkDomainToIp[origHost] ?: staticIp
+            Log.d(TAG, "Inlining script: " + src + " -> host=" + origHost + " path=" + resourcePath)
+            val content = downloadResource(resourceIp, origHost, resourcePath)
             if (content != null) {
                 Log.d(TAG, "Inlined script OK: " + content.length + " chars")
                 // Wrap in DOMContentLoaded listener to emulate defer behavior
@@ -480,8 +517,10 @@ class CaptchaActivity : AppCompatActivity() {
                     return@replace match.value
                 }
                 cssCount++
-                Log.d(TAG, "Inlining CSS: " + href + " -> path=" + resourcePath)
-                val content = downloadResource(staticIp, "static.vk.ru", resourcePath)
+                val origHostCss = extractHost(href) ?: "static.vk.ru"
+                val resourceIpCss = vkDomainToIp[origHostCss] ?: staticIp
+                Log.d(TAG, "Inlining CSS: " + href + " -> host=" + origHostCss + " path=" + resourcePath)
+                val content = downloadResource(resourceIpCss, origHostCss, resourcePath)
                 if (content != null) {
                     Log.d(TAG, "Inlined CSS OK: " + content.length + " chars")
                     // CSS can stay in head — doesn't need defer
@@ -531,6 +570,27 @@ class CaptchaActivity : AppCompatActivity() {
             }
             if (url.startsWith(http)) {
                 return url.substring(http.length)
+            }
+        }
+        return null
+    }
+
+    /**
+     * Extracts the host from an absolute URL (https://host/path).
+     * Returns null for relative URLs or invalid input.
+     */
+    private fun extractHost(url: String): String? {
+        if (url.startsWith("//")) {
+            // Protocol-relative
+            val afterSlash = url.substring(2)
+            val slashIdx = afterSlash.indexOf("/")
+            return if (slashIdx > 0) afterSlash.substring(0, slashIdx) else afterSlash
+        }
+        for (prefix in listOf("https://", "http://")) {
+            if (url.startsWith(prefix)) {
+                val afterProto = url.substring(prefix.length)
+                val slashIdx = afterProto.indexOf("/")
+                return if (slashIdx > 0) afterProto.substring(0, slashIdx) else afterProto
             }
         }
         return null

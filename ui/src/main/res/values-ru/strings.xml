@@ -133,9 +133,6 @@
     <string name="tv_select_a_storage_drive">Выберите накопитель</string>
     <string name="tv_no_file_picker">Пожалуйста, установите утилиту управления файлами для их просмотра</string>
     <string name="tv_add_tunnel_get_started">Добавьте туннель, чтобы начать</string>
-    <string name="donate_title">♥ Пожертвовать проекту CMD WG turn</string>
-    <string name="donate_summary">Каждое пожертвование помогает</string>
-    <string name="donate_google_play_disappointment">Спасибо за поддержку проекта CMD WG turn!\n\nК сожалению, из-за политики Google, нельзя размещать ссылку на тот раздел сайта проекта, где можно сделать пожертвование. Надеемся, вы сможете разобраться самостоятельно!\n\nЕщё раз спасибо за ваш вклад.</string>
     <string name="disable_config_export_title">Отключить экспорт конфигурации</string>
     <string name="disable_config_export_description">Отключение экспорта конфигурации делает приватные ключи менее доступными</string>
     <string name="dns_servers">DNS-серверы</string>
@@ -177,16 +174,6 @@
     <string name="log_viewer_pref_title">Просмотр журналов приложения</string>
     <string name="log_viewer_title">Журнал</string>
     <string name="logcat_error">Не удалось запустить logcat: </string>
-    <string name="module_enabler_disabled_summary">Экспериментальный модуль ядра может улучшить производительность</string>
-    <string name="module_enabler_disabled_title">Включить бэкэнд модуля ядра</string>
-    <string name="module_enabler_enabled_summary">Пользовательское пространство немного медленнее и улучшает стабильность</string>
-    <string name="module_enabler_enabled_title">Отключить бэкэнд модуля ядра</string>
-    <string name="module_installer_error">Что-то пошло не так. Пожалуйста, попробуйте еще раз</string>
-    <string name="module_installer_initial">Экспериментальный модуль ядра может улучшить производительность</string>
-    <string name="module_installer_not_found">Для вашего устройства нет доступных модулей</string>
-    <string name="module_installer_title">Скачать и установить модуль ядра</string>
-    <string name="module_installer_working">Скачивание и установка…</string>
-    <string name="module_version_error">Невозможно определить версию модуля ядра</string>
     <string name="mtu">MTU</string>
     <string name="multiple_tunnels_summary_off">Включение одного туннеля отключит другие</string>
     <string name="multiple_tunnels_summary_on">Одновременно можно включить несколько туннелей</string>
@@ -226,15 +213,6 @@
     <string name="success_application_will_restart">Успешно. Приложение будет перезапущено…</string>
     <string name="toggle_all">Инвертировать все</string>
     <string name="toggle_error">Ошибка переключения туннеля CMD WG turn: %s</string>
-    <string name="tools_installer_already">wg и wg-quick уже установлены</string>
-    <string name="tools_installer_failure">Не удалось установить инструменты командной строки (нет root?)</string>
-    <string name="tools_installer_initial">Установить дополнительные инструменты для сценариев</string>
-    <string name="tools_installer_initial_magisk">Установить дополнительные инструменты для сценариев в качестве модуля Magisk</string>
-    <string name="tools_installer_initial_system">Установить дополнительные инструменты для сценариев в системный раздел</string>
-    <string name="tools_installer_success_magisk">wg и wg-quick установлены как модуль Magisk (требуется перезагрузка)</string>
-    <string name="tools_installer_success_system">wg и wg-quick установлены в системный раздел</string>
-    <string name="tools_installer_title">Установить инструменты командной строки</string>
-    <string name="tools_installer_working">Установка wg и wg-quick</string>
     <string name="tools_unavailable_error">Необходимые инструменты недоступны</string>
     <string name="transfer">Статистика</string>
     <string name="transfer_bytes">%d Б</string>
@@ -256,7 +234,6 @@
     <string name="tunnel_rename_error">Не удалось переименовать туннель: %s</string>
     <string name="tunnel_rename_success">Туннель успешно переименован в “%s”</string>
     <string name="type_name_go_userspace">Go в пользовательском пространстве</string>
-    <string name="type_name_kernel_module">Модуль ядра</string>
     <string name="unknown_error">Неизвестная ошибка</string>
     <string name="updater_avalable">Доступно обновление: v%s</string>
     <string name="updater_action">Обновить</string>
@@ -298,4 +275,39 @@
     <string name="biometric_prompt_private_key_title">Аутентификация для просмотра приватного ключа</string>
     <string name="biometric_auth_error">Ошибка аутентификации</string>
     <string name="biometric_auth_error_reason">Ошибка аутентификации: %s</string>
+
+    <!-- TURN UI translations -->
+    <string name="turn_title">TURN</string>
+    <string name="turn_enable">Включить TURN-прокси</string>
+    <string name="turn_mode">Режим</string>
+    <string name="turn_mode_vk_link">VK Link</string>
+    <string name="turn_mode_wb">Warp Backend</string>
+    <string name="turn_peer">Пир</string>
+    <string name="turn_peer_type">Тип пира</string>
+    <string name="turn_peer_type_proxy_v1">Proxy v1</string>
+    <string name="turn_peer_type_proxy_v2">Proxy v2</string>
+    <string name="turn_peer_type_wireguard">WireGuard</string>
+    <string name="turn_peer_address">Адрес пира</string>
+    <string name="turn_peer_hint">user@server:port или server:port</string>
+    <string name="turn_server_mode">TURN-сервер</string>
+    <string name="turn_vk_link">VK-ссылка</string>
+    <string name="turn_vk_link_hint">https://vk.com/call/join/...</string>
+    <string name="turn_streams">Количество потоков</string>
+    <string name="turn_streams_hint">1-4 (больше = быстрее, но больше риск блока)</string>
+    <string name="turn_streams_per_cred">Потоков на credentials</string>
+    <string name="turn_streams_per_cred_hint">Как много потоков использовать одни credentials</string>
+    <string name="turn_wrap_key">Wrap-ключ (hex)</string>
+    <string name="turn_wrap_key_hint">32 байта (64 hex-символа). Пусто = без wrap.</string>
+    <string name="turn_wrap_key_generate">Сгенерировать</string>
+    <string name="turn_use_udp">Использовать UDP</string>
+    <string name="turn_local_port">Локальный порт</string>
+    <string name="turn_turn_ip">TURN IP (опционально)</string>
+    <string name="turn_turn_port">TURN порт (опционально)</string>
+    <string name="turn_advanced">Расширенные настройки</string>
+    <string name="turn_advanced_show">Показать расширенные настройки</string>
+    <string name="turn_advanced_hide">Скрыть расширенные настройки</string>
+
+    <!-- Strings still referenced by code (kernel module backend) -->
+    <string name="type_name_kernel_module">Модуль ядра</string>
+    <string name="module_version_error">Не удалось определить версию модуля ядра</string>
 </resources>
