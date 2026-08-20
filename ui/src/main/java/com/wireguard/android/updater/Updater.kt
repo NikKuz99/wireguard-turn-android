@@ -115,6 +115,16 @@ object Updater {
                 applicationScope.launch {
                     UserKnobs.setUpdaterNewerVersionConsented(version)
                 }
+                // Start download directly — skip Rechecking + checkForUpdates
+                updaterScope.launch {
+                    try {
+                        downloadReleaseDirectly(version, downloadUrl, downloadSize)
+                    } catch (e: Throwable) {
+                        Log.e(TAG, "Direct download failed", e)
+                        emitProgress(Progress.Failure(e))
+                    }
+                    updating = false
+                }
             }
 
             /** Пользователь отложил (нажал ✗) — откладываем на 24 часа */
@@ -168,23 +178,33 @@ object Updater {
     val state = mutableState.asStateFlow()
 
     private var lastProgressEmitTime = 0L
-    private val PROGRESS_THROTTLE_MS = 500L
+    private val PROGRESS_THROTTLE_MS = 1000L
+    private var lastDownloadedBytes = 0L
 
     private suspend fun emitProgress(progress: Progress, force: Boolean = false) {
-        // Always emit on state CLASS change (e.g. Complete -> Downloading)
         val current = mutableState.value
         val classChanged = current::class != progress::class
         if (classChanged || force) {
             mutableState.emit(progress)
             lastProgressEmitTime = System.currentTimeMillis()
+            if (progress is Progress.Downloading) {
+                lastDownloadedBytes = progress.bytesDownloaded
+            }
             return
         }
-        // For Downloading state, throttle to avoid UI spam (every 500ms)
+        // For Downloading: throttle + only emit on >1% progress change
         if (progress is Progress.Downloading) {
             val now = System.currentTimeMillis()
-            if (now - lastProgressEmitTime >= PROGRESS_THROTTLE_MS) {
+            val timeOK = now - lastProgressEmitTime >= PROGRESS_THROTTLE_MS
+            val bytesChanged = progress.bytesDownloaded - lastDownloadedBytes
+            val percentChanged = if (progress.bytesTotal > 0) {
+                bytesChanged * 100 / progress.bytesTotal
+            } else 0
+            val significantChange = percentChanged >= 1 || bytesChanged > 100_000
+            if (timeOK && significantChange) {
                 mutableState.emit(progress)
                 lastProgressEmitTime = now
+                lastDownloadedBytes = progress.bytesDownloaded
             }
         }
     }
@@ -727,6 +747,36 @@ object Updater {
             emitProgress(Progress.Complete)
             Log.i(TAG, "Update cancelled by user")
         }
+    }
+
+    /**
+     * Download + install directly without rechecking.
+     */
+    private suspend fun downloadReleaseDirectly(
+        version: String,
+        downloadUrl: String,
+        downloadSize: Long
+    ) {
+        if (updating) return
+        updating = true
+        try {
+            val release = GithubRelease(
+                tagName = version,
+                apkDownloadUrl = downloadUrl,
+                apkSize = downloadSize,
+                releaseNotes = ""
+            )
+            val apkFile = downloadApkWithResume(release)
+            installApk(apkFile)
+            apkFile.delete()
+        } catch (e: kotlinx.coroutines.CancellationException) {
+            Log.i(TAG, "Download cancelled by user")
+            throw e
+        } catch (e: Throwable) {
+            Log.e(TAG, "Download failure", e)
+            emitProgress(Progress.Failure(e))
+        }
+        updating = false
     }
 
     private var lastConsentedVersion: String? = null

@@ -59,124 +59,100 @@ class UpdaterPreference(context: Context, attrs: AttributeSet?) : Preference(con
         applyStateWithoutNotify(Updater.state.value)
     }
 
+    // Current display strings (updated by applyStateWithoutNotify, read by onClick)
+    private var currentTitle: String = ""
+    private var currentSummary: String? = null
+    private var currentEnabled: Boolean = true
+
     /**
-     * Apply state directly to views without notifyChanged().
+     * Apply state by computing display strings and updating views DIRECTLY.
+     * Does NOT call Preference.setTitle/setSummary/setEnabled (those internally
+     * call notifyChanged() which crashes during RecyclerView layout).
      * Safe to call from onBindViewHolder.
      */
     private fun applyStateWithoutNotify(progress: Updater.Progress) {
-        when (progress) {
-            is Updater.Progress.Complete -> {
-                title = context.getString(R.string.updater_pref_check)
-                summary = context.getString(R.string.updater_pref_no_update)
-                isEnabled = true
-            }
-            is Updater.Progress.Available -> {
-                title = context.getString(R.string.updater_pref_available, progress.version)
-                summary = if (progress.downloadSize > 0) {
+        val (newTitle, newSummary, newEnabled) = computeDisplayStrings(progress)
+        currentTitle = newTitle
+        currentSummary = newSummary
+        currentEnabled = newEnabled
+        // Update views directly — NO Preference property setters
+        titleView?.text = newTitle
+        summaryView?.apply {
+            text = newSummary
+            visibility = if (newSummary.isNullOrEmpty()) View.GONE else View.VISIBLE
+        }
+        // setEnabled on Preference also calls notifyChanged, so we set it on the view
+        // parent instead (which controls click handling)
+        // Actually, Preference.isEnabled controls click; but setting it calls notifyChanged.
+        // We'll set it only in updateState (runtime path, not bind path).
+    }
+
+    /**
+     * Compute display strings for a given progress state.
+     * Returns (title, summary, isEnabled) — does NOT touch Preference properties.
+     */
+    private fun computeDisplayStrings(progress: Updater.Progress): Triple<String, String?, Boolean> {
+        return when (progress) {
+            is Updater.Progress.Complete -> Triple(
+                context.getString(R.string.updater_pref_check),
+                context.getString(R.string.updater_pref_no_update),
+                true
+            )
+            is Updater.Progress.Available -> Triple(
+                context.getString(R.string.updater_pref_available, progress.version),
+                if (progress.downloadSize > 0) {
                     context.getString(R.string.updater_pref_size, formatBytes(progress.downloadSize))
-                } else null
-                isEnabled = true
-            }
-            is Updater.Progress.Rechecking -> {
-                title = context.getString(R.string.updater_pref_checking)
-                summary = null
-                isEnabled = false
-            }
+                } else null,
+                true
+            )
+            is Updater.Progress.Rechecking -> Triple(
+                context.getString(R.string.updater_pref_checking),
+                null,
+                false
+            )
             is Updater.Progress.Downloading -> {
-                title = context.getString(R.string.updater_pref_downloading)
                 val progressText = if (progress.bytesTotal > 0) {
                     "${formatBytes(progress.bytesDownloaded)} / ${formatBytes(progress.bytesTotal)} " +
                     "(${progress.bytesDownloaded * 100 / progress.bytesTotal}%)"
                 } else {
                     formatBytes(progress.bytesDownloaded)
                 }
-                summary = progressText + "\n" + context.getString(R.string.updater_pref_tap_cancel)
-                isEnabled = true
+                Triple(
+                    context.getString(R.string.updater_pref_downloading),
+                    progressText + "\n" + context.getString(R.string.updater_pref_tap_cancel),
+                    true
+                )
             }
-            is Updater.Progress.Installing -> {
-                title = context.getString(R.string.updater_pref_installing)
-                summary = null
-                isEnabled = false
-            }
-            is Updater.Progress.NeedsUserIntervention -> {
-                title = context.getString(R.string.updater_pref_installing)
-                summary = context.getString(R.string.updater_pref_confirm)
-                isEnabled = false
-            }
-            is Updater.Progress.Failure -> {
-                title = context.getString(R.string.updater_pref_failed)
-                summary = progress.error.message
-                isEnabled = true
-            }
-        }
-        titleView?.text = title
-        summaryView?.apply {
-            text = summary
-            visibility = if (summary.isNullOrEmpty()) View.GONE else View.VISIBLE
+            is Updater.Progress.Installing -> Triple(
+                context.getString(R.string.updater_pref_installing),
+                null,
+                false
+            )
+            is Updater.Progress.NeedsUserIntervention -> Triple(
+                context.getString(R.string.updater_pref_installing),
+                context.getString(R.string.updater_pref_confirm),
+                false
+            )
+            is Updater.Progress.Failure -> Triple(
+                context.getString(R.string.updater_pref_failed),
+                progress.error.message,
+                true
+            )
         }
     }
 
     private fun updateState(progress: Updater.Progress) {
-        when (progress) {
-            is Updater.Progress.Complete -> {
-                title = context.getString(R.string.updater_pref_check)
-                summary = context.getString(R.string.updater_pref_no_update)
-                isEnabled = true
-            }
-            is Updater.Progress.Available -> {
-                title = context.getString(R.string.updater_pref_available, progress.version)
-                summary = if (progress.downloadSize > 0) {
-                    context.getString(R.string.updater_pref_size, formatBytes(progress.downloadSize))
-                } else null
-                isEnabled = true
-            }
-            is Updater.Progress.Rechecking -> {
-                title = context.getString(R.string.updater_pref_checking)
-                summary = null
-                isEnabled = false
-            }
-            is Updater.Progress.Downloading -> {
-                title = context.getString(R.string.updater_pref_downloading)
-                val progressText = if (progress.bytesTotal > 0) {
-                    "${formatBytes(progress.bytesDownloaded)} / ${formatBytes(progress.bytesTotal)} " +
-                    "(${progress.bytesDownloaded * 100 / progress.bytesTotal}%)"
-                } else {
-                    formatBytes(progress.bytesDownloaded)
-                }
-                summary = progressText + "\n" + context.getString(R.string.updater_pref_tap_cancel)
-                isEnabled = true // нажатие = отмена
-            }
-            is Updater.Progress.Installing -> {
-                title = context.getString(R.string.updater_pref_installing)
-                summary = null
-                isEnabled = false
-            }
-            is Updater.Progress.NeedsUserIntervention -> {
-                title = context.getString(R.string.updater_pref_installing)
-                summary = context.getString(R.string.updater_pref_confirm)
-                isEnabled = false
-            }
-            is Updater.Progress.Failure -> {
-                title = context.getString(R.string.updater_pref_failed)
-                summary = progress.error.message
-                isEnabled = true
-            }
-        }
-        // Directly update views if bound (instant UI feedback)
-        titleView?.text = title
-        summaryView?.apply {
-            text = summary
-            visibility = if (summary.isNullOrEmpty()) View.GONE else View.VISIBLE
-        }
-        // notifyChanged() triggers RecyclerView re-bind.
-        // Safe from runtime state changes (NOT from onBindViewHolder itself).
-        // onBindViewHolder uses applyStateWithoutNotify() which skips this.
-        try {
-            notifyChanged()
-        } catch (e: IllegalStateException) {
-            // Safety: ignore if RecyclerView is computing layout
-            Log.w(TAG, "notifyChanged skipped: ${e.message}")
-        }
+        // Compute strings (shared with applyStateWithoutNotify)
+        val (newTitle, newSummary, newEnabled) = computeDisplayStrings(progress)
+        currentTitle = newTitle
+        currentSummary = newSummary
+        currentEnabled = newEnabled
+        // Set Preference properties — these internally call notifyChanged()
+        // which triggers onBindViewHolder → applyStateWithoutNotify (view update).
+        // Safe here because we're NOT in RecyclerView layout.
+        title = newTitle
+        summary = newSummary
+        isEnabled = newEnabled
     }
 
     override fun onClick() {
