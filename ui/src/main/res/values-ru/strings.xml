@@ -271,7 +271,6 @@
     <string name="zip_export_success">Сохранено в “%s”</string>
     <string name="zip_export_summary">Zip-файл будет сохранен в папке загрузок</string>
     <string name="zip_export_title">Экспорт туннелей в zip-файл</string>
-    <string name="biometric_prompt_zip_exporter_title">Аутентификация для экспорта туннелей</string>
     <string name="biometric_prompt_private_key_title">Аутентификация для просмотра приватного ключа</string>
     <string name="biometric_auth_error">Ошибка аутентификации</string>
     <string name="biometric_auth_error_reason">Ошибка аутентификации: %s</string>
