@@ -55,7 +55,8 @@ android {
             }
         }
         debug {
-            applicationIdSuffix = ".debug"
+            // applicationIdSuffix removed — debug and release share same applicationId
+            // so they overwrite each other (avoids installing 2 versions simultaneously)
             versionNameSuffix = "-debug"
         }
         create("googleplay") {
