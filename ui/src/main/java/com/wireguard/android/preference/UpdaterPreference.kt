@@ -162,13 +162,20 @@ class UpdaterPreference(context: Context, attrs: AttributeSet?) : Preference(con
                 isEnabled = true
             }
         }
-        // Directly update views if they are bound.
-        // DO NOT call notifyChanged() here — it crashes when RecyclerView
-        // is computing layout (called from onBindViewHolder).
+        // Directly update views if bound (instant UI feedback)
         titleView?.text = title
         summaryView?.apply {
             text = summary
             visibility = if (summary.isNullOrEmpty()) View.GONE else View.VISIBLE
+        }
+        // notifyChanged() triggers RecyclerView re-bind.
+        // Safe from runtime state changes (NOT from onBindViewHolder itself).
+        // onBindViewHolder uses applyStateWithoutNotify() which skips this.
+        try {
+            notifyChanged()
+        } catch (e: IllegalStateException) {
+            // Safety: ignore if RecyclerView is computing layout
+            Log.w(TAG, "notifyChanged skipped: ${e.message}")
         }
     }
 

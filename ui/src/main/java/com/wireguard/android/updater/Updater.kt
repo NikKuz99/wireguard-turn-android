@@ -357,6 +357,7 @@ object Updater {
                     }
                 }
 
+                activeConnection = connection
                 try {
                     if (connection.responseCode != HttpURLConnection.HTTP_OK &&
                         connection.responseCode != HttpURLConnection.HTTP_PARTIAL) {
@@ -387,6 +388,11 @@ object Updater {
                                     throw IOException("File too large: $downloaded bytes")
                                 }
 
+                                // Check if user cancels — exit loop immediately
+                                if (!updating) {
+                                    throw kotlinx.coroutines.CancellationException("Download cancelled by user")
+                                }
+
                                 emitProgress(Progress.Downloading(downloaded, totalSize), true)
                             }
                         }
@@ -407,6 +413,7 @@ object Updater {
                     return@withContext finalFile
 
                 } finally {
+                    activeConnection = null
                     connection.disconnect()
                 }
             } catch (e: Throwable) {
@@ -483,6 +490,8 @@ object Updater {
     }
 
     private var updating = false
+    @Volatile private var activeConnection: java.net.HttpURLConnection? = null
+    @Volatile private var downloadJob: kotlinx.coroutines.Job? = null
 
     /**
      * Полный цикл: проверить → скачать → установить.
@@ -493,6 +502,7 @@ object Updater {
         updating = true
         try {
             emitProgress(Progress.Rechecking)
+            // Note: this function runs in updaterScope; cancelUpdate() can interrupt via activeConnection
 
             // checkForUpdates() делает HTTP-запрос — должен быть на IO-потоке
             val release = withContext(Dispatchers.IO) { checkForUpdates() }
@@ -696,9 +706,15 @@ object Updater {
      * Отмена текущего обновления (вызывается из настроек при нажатии во время загрузки).
      */
     fun cancelUpdate() {
+        // Set updating=false FIRST so download loop exits on next iteration
+        updating = false
+        lastConsentedVersion = null
+        // Disconnect active connection to unblock blocking read() in download loop
+        try {
+            activeConnection?.disconnect()
+        } catch (_: Throwable) {}
+        // Launch cleanup on IO scope
         updaterScope.launch {
-            updating = false
-            lastConsentedVersion = null
             // Удаляем частично скачанный файл
             try {
                 val context = Application.get().applicationContext
