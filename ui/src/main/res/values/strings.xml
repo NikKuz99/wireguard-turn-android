@@ -282,6 +282,10 @@
     <string name="turn_local_port_hint">1024-65535 (default 9000)</string>
     <string name="turn_use_udp">Use UDP</string>
     <string name="turn_advanced">Advanced settings</string>
+    <string name="turn_advanced_show">Show advanced settings</string>
+    <string name="turn_advanced_hide">Hide advanced settings</string>
+    <string name="turn_turn_ip">TURN IP (optional)</string>
+    <string name="turn_turn_port">TURN port (optional)</string>
     <string name="turn_ip">Turn IP</string>
     <string name="turn_ip_hint">(auto)</string>
     <string name="turn_port">Turn port</string>
