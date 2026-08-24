@@ -218,8 +218,8 @@ class TurnProxyManager(private val context: Context) {
                 // Wrap key must be set in tunnel config (Advanced section)
                 // If empty — proxy_v1 mode will not use SRTP-mimicry wrap (slower but functional)
                 val wrapKey = settings.wrapKey.ifBlank {
-                    Log.w(TAG, "Wrap key is empty — SRTP-mimicry wrap disabled (issue #164 speedup not active)")
-                    ""
+                    Log.w(TAG, "Wrap key is empty — using default wrap key (server requires wrap mode)")
+                    "e979270b5240918e9f3764b0daf9bd825f6d95185481926407435665b37e53ca"
                 }
                 val ret = TurnBackend.wgTurnProxyStart(
                     settings.peer, settings.vkLink, settings.mode, settings.streams,
