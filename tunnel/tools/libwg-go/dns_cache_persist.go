@@ -97,6 +97,7 @@ var persist = &PersistentCache{
 // SetCachePath is called from JNI (wgSetDnsCachePath).
 // Loads cache from disk synchronously and starts background saver.
 func (p *PersistentCache) SetCachePath(path string) {
+	turnLog("[DNSCache] SetCachePath called: %s", path)
 	p.mu.Lock()
 	// Stop any previous saver (e.g. on app restart within same process)
 	if p.loaded && p.path != "" && p.path != path {
@@ -223,6 +224,7 @@ func (p *PersistentCache) MarkDirty() {
 	p.mu.Lock()
 	p.dirty = true
 	p.mu.Unlock()
+	turnLog("[DNSCache] MarkDirty called")
 }
 
 // SaveNow forces a synchronous save. Called on tunnel stop and on app exit.
@@ -239,8 +241,10 @@ func (p *PersistentCache) saveToDisk() error {
 	p.dirty = false
 	p.mu.Unlock()
 	if path == "" {
+		turnLog("[DNSCache] saveToDisk: path empty, skipping")
 		return nil
 	}
+	turnLog("[DNSCache] saveToDisk: starting (path=%s)", path)
 
 	cf := cacheFileV1{
 		Version: 1,
@@ -346,9 +350,15 @@ func (p *PersistentCache) saveToDisk() error {
 	// Atomic write: temp file + rename
 	tmpPath := path + ".tmp"
 	if err := os.WriteFile(tmpPath, data, 0600); err != nil {
+		turnLog("[DNSCache] saveToDisk: WriteFile error: %v", err)
 		return err
 	}
-	return os.Rename(tmpPath, path)
+	if err := os.Rename(tmpPath, path); err != nil {
+		turnLog("[DNSCache] saveToDisk: Rename error: %v", err)
+		return err
+	}
+	turnLog("[DNSCache] saveToDisk: SUCCESS, %d bytes written", len(data))
+	return nil
 }
 
 // trimByScore keeps top N IPs by Score(), evicts the rest.
@@ -399,15 +409,18 @@ func (p *PersistentCache) startSaverLocked() {
 		ticker := time.NewTicker(saveInterval)
 		defer ticker.Stop()
 
+	turnLog("[DNSCache] saver goroutine started (interval=%v)", saveInterval)
 		for {
 			select {
 			case <-stopCh:
+				turnLog("[DNSCache] saver goroutine stopping (final save)")
 				_ = p.saveToDisk()
 				return
 			case <-ticker.C:
 				p.mu.Lock()
 				dirty := p.dirty
 				p.mu.Unlock()
+				turnLog("[DNSCache] saver tick: dirty=%v", dirty)
 				if dirty {
 					_ = p.saveToDisk()
 				}

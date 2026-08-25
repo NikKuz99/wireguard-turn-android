@@ -76,17 +76,32 @@ func (m *HostMetric) Score() float64 {
 
 // VkHosts — менеджер VK-доменов с baseline + dynamic + метриками
 type VkHosts struct {
-	mu       sync.RWMutex
-	dynamic  map[string][]string   // домен → список IP из DNS
-	metrics  map[string]*HostMetric // "domain:ip" → метрика
-	dnsOK    bool                   // работает ли DNS сейчас
-	lastDNS  time.Time              // когда последний раз DNS работал
+	mu              sync.RWMutex
+	dynamic         map[string][]string    // домен → список IP из DNS
+	metrics         map[string]*HostMetric // "domain:ip" → метрика
+	dnsOK           bool                   // работает ли DNS сейчас
+	lastDNS         time.Time              // когда последний раз DNS работал
+	pendingFailures map[string][]string    // домен → буфер неудач
+	pendingStarted  map[string]time.Time   // домен → когда начали буфер
 }
 
 var vkHosts = &VkHosts{
-	dynamic: make(map[string][]string),
-	metrics: make(map[string]*HostMetric),
-	dnsOK:   true, // оптимистично предполагаем что DNS работает
+	dynamic:         make(map[string][]string),
+	metrics:         make(map[string]*HostMetric),
+	pendingFailures: make(map[string][]string),
+	pendingStarted:  make(map[string]time.Time),
+	dnsOK:           true,
+}
+
+func init() {
+	// Background goroutine: discard stale pending failures every 10s
+	go func() {
+		ticker := time.NewTicker(10 * time.Second)
+		defer ticker.Stop()
+		for range ticker.C {
+			vkHosts.discardStalePending()
+		}
+	}()
 }
 
 // metricKey возвращает ключ для map metrics
@@ -246,10 +261,10 @@ func (vh *VkHosts) UpdateDynamic(domain string, ips []string) {
 	}
 }
 
-// RecordSuccess обновляет метрику после успешного подключения
+// RecordSuccess обновляет метрику после успешного подключения.
+// Успех означает что сеть работает — коммитим pending failures.
 func (vh *VkHosts) RecordSuccess(domain, ip string, rtt time.Duration) {
 	vh.mu.Lock()
-	defer vh.mu.Unlock()
 
 	key := metricKey(domain, ip)
 	m, exists := vh.metrics[key]
@@ -263,7 +278,6 @@ func (vh *VkHosts) RecordSuccess(domain, ip string, rtt time.Duration) {
 	m.FailCount = 0
 	m.LastSeen = time.Now()
 
-	// Экспоненциальное сглаживание RTT
 	if m.RTT == 0 {
 		m.RTT = rtt
 	} else {
@@ -271,23 +285,76 @@ func (vh *VkHosts) RecordSuccess(domain, ip string, rtt time.Duration) {
 	}
 
 	m.SuccessRate = float64(m.TotalOK) / float64(m.TotalTries)
+	vh.mu.Unlock()
+
+	vh.flushPendingFailures(domain)
+	persist.MarkDirty()
 }
 
-// RecordFailure обновляет метрику после неудачного подключения
+// RecordFailure обновляет метрику после неудачного подключения.
+// ВАЖНО: Не списываем TTL немедленно. Буферизуем неудачу в pendingFailures.
+// TTL будет списан только когда хотя бы один IP в этой "сессии" ответил
+// успешно (вызов RecordSuccess → flushPendingFailures).
 func (vh *VkHosts) RecordFailure(domain, ip string) {
 	vh.mu.Lock()
 	defer vh.mu.Unlock()
+	vh.pendingFailures[domain] = append(vh.pendingFailures[domain], ip)
+	if _, ok := vh.pendingStarted[domain]; !ok {
+		vh.pendingStarted[domain] = time.Now()
+	}
+	if len(vh.pendingFailures[domain]) > 200 {
+		vh.pendingFailures[domain] = vh.pendingFailures[domain][len(vh.pendingFailures[domain])-100:]
+	}
+}
 
-	key := metricKey(domain, ip)
-	m, exists := vh.metrics[key]
-	if !exists {
-		m = &HostMetric{IP: ip}
-		vh.metrics[key] = m
+// flushPendingFailures коммитит буфер неудач в метрики.
+func (vh *VkHosts) flushPendingFailures(domain string) {
+	vh.mu.Lock()
+	pending := vh.pendingFailures[domain]
+	delete(vh.pendingFailures, domain)
+	delete(vh.pendingStarted, domain)
+	vh.mu.Unlock()
+
+	if len(pending) == 0 {
+		return
 	}
 
-	m.TotalTries++
-	m.FailCount++
-	m.SuccessRate = float64(m.TotalOK) / float64(m.TotalTries)
+	vh.mu.Lock()
+	evicted := []string{}
+	for _, ip := range pending {
+		key := metricKey(domain, ip)
+		m, exists := vh.metrics[key]
+		if !exists {
+			m = &HostMetric{IP: ip}
+			vh.metrics[key] = m
+		}
+		m.TotalTries++
+		m.FailCount++
+		m.SuccessRate = float64(m.TotalOK) / float64(m.TotalTries)
+		if m.FailCount >= failCountHardLimit {
+			evicted = append(evicted, ip)
+		}
+	}
+	vh.mu.Unlock()
+
+	for _, ip := range evicted {
+		evictHardFailedIP(domain, ip)
+		turnLog("[VKHosts] Evicted IP %s for %s (FailCount >= %d)", ip, domain, failCountHardLimit)
+	}
+	persist.MarkDirty()
+}
+
+// discardStalePending сбрасывает pending-буферы старше pendingTimeout.
+func (vh *VkHosts) discardStalePending() {
+	vh.mu.Lock()
+	defer vh.mu.Unlock()
+	now := time.Now()
+	for domain, started := range vh.pendingStarted {
+		if now.Sub(started) > pendingTimeout {
+			delete(vh.pendingFailures, domain)
+			delete(vh.pendingStarted, domain)
+		}
+	}
 }
 
 // MarkDNSWorking помечает что DNS снова работает
