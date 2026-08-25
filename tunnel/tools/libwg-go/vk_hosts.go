@@ -144,11 +144,19 @@ func (vh *VkHosts) Resolve(ctx context.Context, domain string) (string, error) {
 			if addedCount > 0 {
 				turnLog("[VKHosts] DNS added %d new IPs for %s (total: %d): %v",
 					addedCount, domain, len(vh.dynamic[domain]), vh.dynamic[domain])
+				needTrim := len(vh.dynamic[domain]) > maxIPsPerDomain
+				vh.mu.Unlock()
+				if needTrim {
+					trimDomainIPs(domain)
+					turnLog("[VKHosts] Trimmed %s to max %d IPs", domain, maxIPsPerDomain)
+				}
+				persist.MarkDirty()
+			} else {
+				vh.mu.Unlock()
 			}
 			if wasDNSFailed {
 				turnLog("[VKHosts] DNS recovered for %s — switching back from baseline to DNS mode", domain)
 			}
-			vh.mu.Unlock()
 			// Возвращаем лучший по метрикам из всех (dynamic + baseline)
 			return vh.selectBestIP(domain)
 		}

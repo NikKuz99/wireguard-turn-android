@@ -265,6 +265,12 @@ class TurnProxyManager(private val context: Context) {
 
             // Stop TURN proxy BEFORE acquiring mutex to avoid deadlock with startup wait
             TurnBackend.wgTurnProxyStop()
+            // Save accumulated DNS cache + metrics to disk for next launch
+            try {
+                TurnBackend.wgSaveDnsCacheNow()
+            } catch (e: Throwable) {
+                Log.w(TAG, "DNS cache save failed: ${'$'}{e.message}")
+            }
 
             operationMutex.lock()
             try {

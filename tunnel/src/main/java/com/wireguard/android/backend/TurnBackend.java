@@ -178,5 +178,11 @@ public final class TurnBackend {
     public static native void wgNotifyNetworkChange();
     public static native String wgGetNetworkDnsServers(long networkHandle);
 
+    // Persistent DNS cache — set path to JSON file for storing resolved IPs
+    // and per-IP metrics between app restarts.
+    public static native void wgSetDnsCachePath(String cachePath);
+    // Force synchronous save (call on tunnel stop / app exit).
+    public static native void wgSaveDnsCacheNow();
+
     private static final String TAG = "WireGuard/TurnBackend";
 }

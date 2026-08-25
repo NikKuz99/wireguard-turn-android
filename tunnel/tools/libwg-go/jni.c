@@ -20,6 +20,8 @@ extern int wgTurnProxyStart(const char *peer_addr, const char *vklink, const cha
 extern void wgTurnProxyStop();
 extern void wgNotifyNetworkChange();
 extern const char* getNetworkDnsServers(long long network_handle);
+extern void wgSetDnsCachePath(const char *path);
+extern void wgSaveDnsCacheNow();
 
 static JavaVM *java_vm;
 static jobject vpn_service_global;
@@ -555,4 +557,27 @@ const char* requestCaptcha(const char* redirect_uri)
 	__android_log_print(ANDROID_LOG_INFO, "WireGuard/JNI",
 		"requestCaptcha: returning %s", result ? "token" : "NULL");
 	return result;
+}
+
+
+// JNI bridge for wgSetDnsCachePath — passes cache file path to Go-side persistent cache.
+JNIEXPORT void JNICALL Java_com_wireguard_android_backend_TurnBackend_wgSetDnsCachePath(JNIEnv *env, jclass c, jstring cache_path)
+{
+	if (!cache_path) {
+		__android_log_print(ANDROID_LOG_WARN, "WireGuard/JNI", "wgSetDnsCachePath called with NULL");
+		return;
+	}
+	const char *cache_path_jni = (*env)->GetStringUTFChars(env, cache_path, 0);
+	char *cache_path_str = cache_path_jni ? strdup(cache_path_jni) : NULL;
+
+	wgSetDnsCachePath(cache_path_str);
+
+	(*env)->ReleaseStringUTFChars(env, cache_path, cache_path_jni);
+	free(cache_path_str);
+}
+
+// JNI bridge for wgSaveDnsCacheNow — forces synchronous save of DNS cache to disk.
+JNIEXPORT void JNICALL Java_com_wireguard_android_backend_TurnBackend_wgSaveDnsCacheNow(JNIEnv *env, jclass c)
+{
+	wgSaveDnsCacheNow();
 }

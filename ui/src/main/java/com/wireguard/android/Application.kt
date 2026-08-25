@@ -41,6 +41,7 @@ import kotlinx.coroutines.flow.launchIn
 import kotlinx.coroutines.flow.onEach
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.runBlocking
+import java.io.File
 import java.lang.ref.WeakReference
 import java.util.Locale
 
@@ -116,7 +117,18 @@ class Application : android.app.Application() {
         // Load wg-go library BEFORE creating TurnProxyManager to avoid UnsatisfiedLinkError
         com.wireguard.android.util.SharedLibraryLoader.loadSharedLibrary(applicationContext, "wg-go")
         turnProxyManager = TurnProxyManager(applicationContext)
-        
+
+        // Initialize persistent DNS cache (JSON file in cacheDir).
+        // Stores resolved IPs and per-IP metrics between app restarts.
+        // Falls back to baseline IPs (hardcoded) + DNS resolution if file missing.
+        val dnsCacheFile = File(applicationContext.cacheDir, "turn_dns_cache.json")
+        try {
+            TurnBackend.wgSetDnsCachePath(dnsCacheFile.absolutePath)
+            Log.i(TAG, "Persistent DNS cache initialized at " + dnsCacheFile.absolutePath)
+        } catch (e: Throwable) {
+            Log.e(TAG, "Failed to initialize DNS cache: " + e.message)
+        }
+
         // Register captcha handler for TURN proxy (fallback when automatic solving fails)
         TurnBackend.setCaptchaHandler { redirectUri ->
             Log.d(TAG, "Captcha handler invoked, showing CaptchaActivity")
@@ -143,6 +155,12 @@ class Application : android.app.Application() {
     }
 
     override fun onTerminate() {
+        // Force save DNS cache before process exits
+        try {
+            TurnBackend.wgSaveDnsCacheNow()
+        } catch (ignored: Throwable) {
+            // Library may already be unloaded
+        }
         coroutineScope.cancel()
         super.onTerminate()
     }

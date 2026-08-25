@@ -105,6 +105,7 @@ func (c *DnsCache) Resolve(ctx context.Context, domain string) (string, error) {
 	c.mu.Lock()
 	c.ips[domain] = ip
 	c.mu.Unlock()
+	persist.MarkDirty()
 
 	return ip, nil
 }
@@ -138,7 +139,13 @@ func (c *DnsCache) ResolveAll(ctx context.Context, domain string) ([]string, err
 	if len(ips) > 0 {
 		c.ips[domain] = ips[0]
 	}
+	needTrim := len(ips) > maxIPsPerDomain
 	c.mu.Unlock()
+
+	if needTrim {
+		trimDomainIPs(domain)
+	}
+	persist.MarkDirty()
 
 	return ips, nil
 }
@@ -481,16 +488,17 @@ func protectAndDial(ctx context.Context, network, addr string) (net.Conn, error)
 	return conn, nil
 }
 
-// ClearCache clears DNS cache and resets last successful server index
+// ClearCache clears DNS runtime cache (used on network change).
+// NOTE: Persistent IPs (loaded from disk + accumulated via DNS) are PRESERVED.
+// We only reset the last-successful-server index to force fresh resolution.
+// Rationale: known IPs are still valid even after network change; we don't
+// want to lose accumulated IP pool just because user switched Wi-Fi/cellular.
 func ClearCache() {
-	hostCache.mu.Lock()
-	defer hostCache.mu.Unlock()
-	hostCache.ips = make(map[string]string)
-	hostCache.allIps = make(map[string][]string)
+	// Reset last successful DNS server index — let resolver try all servers fresh
 	lastSuccessfulMu.Lock()
 	lastSuccessfulIndex = 0
 	lastSuccessfulMu.Unlock()
-	turnLog("[DNS] Cache cleared")
+	turnLog("[DNS] Cache cleared (persistent IPs preserved)")
 }
 
 
