@@ -601,10 +601,13 @@ object Updater {
      * 8. Пользователь нажимает ✓ → consented → downloadAndUpdateWrapErrors()
      */
     fun monitorForUpdates() {
-        if (BuildConfig.DEBUG) {
-            Log.i(TAG, "Update monitoring disabled in DEBUG build")
-            return
-        }
+        // T15: Проверка обновлений ВСЕГДА при старте приложения (даже в DEBUG).
+        // Поведение:
+        //   - Первая проверка сразу при старте
+        //   - При ошибке (нет интернета и т.п.): retry каждые 60 секунд, без уведомления пользователя
+        //   - При успехе (ответ получен, даже если новой версии нет): выходим из цикла —
+        //     не опрашиваем GitHub повторно до следующего перезапуска приложения
+        //   - Если найдена новая версия: показываем popup, выходим из цикла
 
         val context = Application.get()
 
@@ -629,44 +632,33 @@ object Updater {
             return
         }
 
-        // Цикл проверки обновлений
         updaterScope.launch {
             // Сначала проверяем, не отложил ли пользователь
             val postponedUntil = UserKnobs.updaterPostponedUntil.firstOrNull() ?: 0L
             if (System.currentTimeMillis() < postponedUntil) {
-                Log.i(TAG, "Update postponed until ${postponedUntil}, skipping check")
+                Log.i(TAG, "Update postponed until $postponedUntil, skipping check")
                 return@launch
             }
 
-            // НЕ запускаем загрузку автоматически при старте от старого consented.
-            // Загрузка запускается только через init{} подписку при НОВОМ consented
-            // (т.е. когда пользователь только что нажал "Обновить" в диалоге).
-
-            var waitTimeMinutes = 1L // Первая проверка через 1 минуту после старта
-            var exceptionCount = 0
+            Log.i(TAG, "Update monitoring started: will check immediately, retry 60s on failure, stop on success")
 
             while (true) {
                 try {
                     val release = withContext(Dispatchers.IO) { checkForUpdates() }
+                    // Успех — ответ получен. Если есть новая версия, показываем popup.
                     if (release != null) {
-                        // Новая версия доступна
                         val seenVersion = UserKnobs.updaterNewerVersionSeen.firstOrNull()
                         val consentedVer = UserKnobs.updaterNewerVersionConsented.firstOrNull()
-
-                        // Проверяем, не отложил ли пользователь недавно
                         val postponed = UserKnobs.updaterPostponedUntil.firstOrNull() ?: 0L
+
                         if (System.currentTimeMillis() < postponed) {
                             Log.i(TAG, "Update still postponed, not showing popup")
                         } else if (consentedVer != null) {
-                            // Уже согласились — загрузка идёт через init{} подписку
-                            // Ничего не делаем здесь, чтобы не запускать дважды
                             Log.i(TAG, "Update already consented: $consentedVer, download in progress")
                         } else {
-                            // Запоминаем, что видели эту версию
                             if (seenVersion != release.tagName) {
                                 UserKnobs.setUpdaterNewerVersionSeen(release.tagName)
                             }
-                            // Показываем popup
                             emitProgress(
                                 Progress.Available(
                                     version = release.tagName,
@@ -676,21 +668,16 @@ object Updater {
                                 )
                             )
                         }
-                    }
-                    exceptionCount = 0
-                    waitTimeMinutes = CHECK_INTERVAL_HOURS * 60
-                } catch (_: Throwable) {
-                    if (++exceptionCount <= 6) {
-                        // Экспоненциальный retry: 1, 2, 4, 8, 16, 32 минуты
-                        waitTimeMinutes = min(32L, (1L shl (exceptionCount - 1)))
                     } else {
-                        // После 6 неудач — стандартные 6 часов
-                        waitTimeMinutes = CHECK_INTERVAL_HOURS * 60
-                        exceptionCount = 0
+                        Log.i(TAG, "Update check succeeded — no new version available, stopping periodic check")
                     }
+                    // T15: Успех — выходим из цикла, до следующего запуска приложения
+                    return@launch
+                } catch (e: Throwable) {
+                    // T15: Тихий retry — не уведомляем пользователя (может быть нет интернета)
+                    Log.d(TAG, "Update check failed, retry in 60s: " + e.message)
+                    delay(60.seconds)
                 }
-
-                delay(waitTimeMinutes.minutes)
             }
         }
     }
