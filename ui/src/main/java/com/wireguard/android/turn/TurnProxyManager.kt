@@ -45,6 +45,7 @@ class TurnProxyManager(private val context: Context) {
     
     // Network tracking
     private val networkMonitor = PhysicalNetworkMonitor(context)
+    private var handshakeWatchdog: HandshakeWatchdog? = null
     @Volatile private var lastKnownNetwork: Network? = null
     
     init {
@@ -108,6 +109,12 @@ class TurnProxyManager(private val context: Context) {
             when (val result = startForTunnelInternal(name, settings)) {
                 TurnStartResult.Success -> {
                     Log.d(TAG, "TURN restarted successfully on attempt $attempts")
+                    // Restart handshake watchdog with fresh state
+                    handshakeWatchdog?.stop()
+                    activeTunnelName?.let { name ->
+                        handshakeWatchdog = HandshakeWatchdog(name) { performRestartSequence() }
+                        handshakeWatchdog?.start(scope)
+                    }
                     return // Exit loop on success
                 }
                 is TurnStartResult.Failure -> {
@@ -161,6 +168,11 @@ class TurnProxyManager(private val context: Context) {
         if (result == TurnStartResult.Success) {
             // After initial start, allow network changes to trigger restarts.
             // We delay slightly to ensure we don't catch the immediate network fluctuation caused by VPN itself.
+
+            // Start handshake watchdog — detects stale WG handshake and restarts TURN
+            handshakeWatchdog = HandshakeWatchdog(tunnelName) { performRestartSequence() }
+            handshakeWatchdog?.start(scope)
+
             scope.launch {
                 delay(2000)
                 Log.d(TAG, "Initialization phase complete, network monitoring active")
@@ -260,6 +272,8 @@ class TurnProxyManager(private val context: Context) {
         withContext(Dispatchers.IO) {
             userInitiatedStop = true
             activeTunnelName = null
+            handshakeWatchdog?.stop()
+            handshakeWatchdog = null
             activeSettings = null
             lastKnownNetwork = null
 
