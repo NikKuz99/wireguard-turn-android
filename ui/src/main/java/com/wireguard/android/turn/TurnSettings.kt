@@ -21,7 +21,7 @@ data class TurnSettings(
     val turnPort: Int = 0,
     val peerType: String = "proxy_v1",  // "proxy_v1", "wireguard" (proxy_v2 hidden from UI, normalized to v1)
     val streamsPerCred: Int = 4,
-    val watchdogTimeout: Int = 30,  // 30s RX watchdog (0 = disabled)
+    val watchdogTimeout: Int = 0,
     val wrapKey: String = "",  // 64-hex-char SRTP-mimicry wrap key (empty = disabled)
 ) {
     fun toComments(): List<String> {
