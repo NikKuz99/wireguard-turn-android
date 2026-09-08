@@ -402,7 +402,7 @@ func parseCaptchaBootstrapHTML(html string) (*captchaBootstrap, error) {
 	}
 
 	return &captchaBootstrap{
-		PowInput:   powInputMatch[1],
+		PowInput:   powInput,
 		Difficulty: difficulty,
 		Settings:   settings,
 	}, nil
