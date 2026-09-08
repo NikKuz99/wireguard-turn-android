@@ -362,17 +362,32 @@ func parseCaptchaSettingsResponse(resp map[string]interface{}) (*captchaSettings
 }
 
 func parseCaptchaBootstrapHTML(html string) (*captchaBootstrap, error) {
-	powInputRe := regexp.MustCompile(`const\s+powInput\s*=\s*"([^"]+)"`)
-	powInputMatch := powInputRe.FindStringSubmatch(html)
-	if len(powInputMatch) < 2 {
-		return nil, fmt.Errorf("powInput not found in captcha HTML")
+	// Try multiple patterns for powInput extraction.
+	// VK periodically changes the captcha page structure:
+	//   1. Classic: const powInput = "..."
+	//   2. BFF obfuscated: }("POW_INPUT",DIFFICULTY,"pow_timeout"))
+	powInputPatterns := []*regexp.Regexp{
+		regexp.MustCompile(`const\s+powInput\s*=\s*"([^"]+)"`),
+		regexp.MustCompile(`\}\("([^"]+)",(\d+),"pow_timeout"\)`),
+	}
+	var powInput string
+	for _, re := range powInputPatterns {
+		if m := re.FindStringSubmatch(html); len(m) >= 2 && m[1] != "" {
+			powInput = m[1]
+			break
+		}
+	}
+	if powInput == "" {
+		return nil, fmt.Errorf("powInput not found in captcha HTML (tried %d patterns)", len(powInputPatterns))
 	}
 
 	difficulty := 2
-	for _, expr := range []*regexp.Regexp{
+	difficultyPatterns := []*regexp.Regexp{
 		regexp.MustCompile(`startsWith\('0'\.repeat\((\d+)\)\)`),
 		regexp.MustCompile(`const\s+difficulty\s*=\s*(\d+)`),
-	} {
+		regexp.MustCompile(`\}\("[^"]+",(\d+),"pow_timeout"\)`),
+	}
+	for _, expr := range difficultyPatterns {
 		if match := expr.FindStringSubmatch(html); len(match) >= 2 {
 			if parsed, err := strconv.Atoi(match[1]); err == nil {
 				difficulty = parsed
