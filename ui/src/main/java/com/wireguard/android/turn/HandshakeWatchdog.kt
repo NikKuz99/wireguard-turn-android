@@ -7,7 +7,10 @@ package com.wireguard.android.turn
 
 import android.util.Log
 import com.wireguard.android.Application.Companion.getBackend
+import com.wireguard.android.Application.Companion.getTunnelManager
+import com.wireguard.android.backend.Statistics
 import com.wireguard.android.backend.Tunnel
+import com.wireguard.crypto.Key
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
@@ -122,7 +125,7 @@ class HandshakeWatchdog(
                 }
 
                 // Get tunnel object by name, then get statistics
-                val tm = com.wireguard.android.model.TunnelManager.getTunnelManager()
+                val tm = getTunnelManager()
                 val tunnels = tm.getTunnels()
                 val tunnelObj = tunnels[tunnelName]
                 if (tunnelObj == null) {
@@ -130,7 +133,7 @@ class HandshakeWatchdog(
                     return@withContext false
                 }
 
-                val stats: Statistics = try {
+                val stats = try {
                     tm.getTunnelStatistics(tunnelObj)
                 } catch (e: Exception) {
                     Log.d(TAG, "Failed to get statistics: ${e.message}")
@@ -139,8 +142,10 @@ class HandshakeWatchdog(
 
                 // Find the latest handshake time across all peers
                 var latestHandshake = 0L
-                for (key in stats.peers()) {
-                    val hs = stats.peer(key).latestHandshakeEpochMillis
+                val peerKeys: Array<Key> = stats.peers()
+                for (key in peerKeys) {
+                    val peerStats = stats.peer(key)
+                    val hs = peerStats?.latestHandshakeEpochMillis ?: 0L
                     if (hs > latestHandshake) {
                         latestHandshake = hs
                     }
