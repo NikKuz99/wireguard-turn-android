@@ -726,18 +726,24 @@ class CaptchaActivity : AppCompatActivity() {
     private fun rewriteVkUrls(content: String): String {
         var result = content
 
-        // Inject fetch/XHR interceptor into HTML head BEFORE any other script runs.
+        // Inject webpack publicPath fix + fetch/XHR interceptor into HTML head BEFORE any other script runs.
+        // VK BFF uses webpack 5 which calls document.currentScript for automatic publicPath.
+        // Android 7 WebView doesn't support document.currentScript, causing:
+        //   "Automatic publicPath is not supported in this browser"
+        // Fix: set __webpack_public_path__ to empty string before any webpack code runs.
+        val webpackFix = "<script>if(typeof window.__webpack_public_path__==='undefined'){window.__webpack_public_path__='';}</script>"
         val interceptor = "<script>" + FETCH_INTERCEPT_SCRIPT_BODY + "</script>"
+        val combinedInject = webpackFix + interceptor
         if (result.contains("<head>")) {
-            result = result.replaceFirst("<head>", "<head>" + interceptor)
+            result = result.replaceFirst("<head>", "<head>" + combinedInject)
             Log.d(TAG, "Injected fetch interceptor into HTML head")
         } else if (result.contains("<html>")) {
-            result = result.replaceFirst("<html>", "<html>" + interceptor)
+            result = result.replaceFirst("<html>", "<html>" + combinedInject)
             Log.d(TAG, "Injected fetch interceptor after <html>")
         } else {
             // Prepend before any script
             if (result.contains("<script")) {
-                result = interceptor + result
+                result = combinedInject + result
                 Log.d(TAG, "Prepended fetch interceptor before first script")
             }
         }

@@ -20,6 +20,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
+	"log"
 	"math/rand"
 	neturl "net/url"
 	"strconv"
@@ -319,7 +320,14 @@ func fetchCaptchaBootstrap(ctx context.Context, redirectURI string, client tlscl
 	if err != nil {
 		return nil, err
 	}
-	return parseCaptchaBootstrapHTML(string(body))
+	// Debug: log HTML length and check for pow_timeout pattern
+	log.Printf("[Captcha] Bootstrap HTML length: %d, contains pow_timeout: %v", len(body), strings.Contains(string(body), "pow_timeout"))
+	// Log last 300 chars to see if BFF JS is present
+	htmlStr := string(body)
+	if len(htmlStr) > 300 {
+		log.Printf("[Captcha] HTML tail: ...%s", htmlStr[len(htmlStr)-300:])
+	}
+	return parseCaptchaBootstrapHTML(htmlStr)
 }
 
 func solvePoW(powInput string, difficulty int) (string, int, bool) {
