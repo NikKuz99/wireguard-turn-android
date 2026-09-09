@@ -731,7 +731,25 @@ class CaptchaActivity : AppCompatActivity() {
         // Android 7 WebView doesn't support document.currentScript, causing:
         //   "Automatic publicPath is not supported in this browser"
         // Fix: set __webpack_public_path__ to empty string before any webpack code runs.
-        val webpackFix = "<script>if(typeof window.__webpack_public_path__==='undefined'){window.__webpack_public_path__='';}</script>"
+        val webpackFix = "<script>(
+            // Fix 1: Set __webpack_public_path__ to prevent auto-detection
+            if(typeof window.__webpack_public_path__==='undefined'){window.__webpack_public_path__='';}
+            // Fix 2: Polyfill document.currentScript for Android 7 WebView
+            // Webpack 5 uses document.currentScript.src for automatic publicPath
+            if(!document.currentScript){
+                document.currentScript={src:window.location.href};
+            }
+            // Fix 3: Intercept document.currentScript access via Object.defineProperty
+            try{
+                var origDesc=Object.getOwnPropertyDescriptor(Document.prototype,'currentScript');
+                if(!origDesc||!origDesc.get){
+                    Object.defineProperty(document,'currentScript',{
+                        get:function(){return{src:window.location.href};},
+                        configurable:true
+                    });
+                }
+            }catch(e){}
+            )</script>"
         val interceptor = "<script>" + FETCH_INTERCEPT_SCRIPT_BODY + "</script>"
         val combinedInject = webpackFix + interceptor
         if (result.contains("<head>")) {
