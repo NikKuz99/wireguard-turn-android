@@ -196,14 +196,36 @@ func (s *stream) run(link string, peer *net.UDPAddr, udp bool, okchan chan<- str
 		}()
 
 		if err != nil && s.ctx.Err() == nil {
-			turnLog("[STREAM %d] Error: %v. Reconnecting in 1s...", s.id, err)
+			// BUG-010 backoff (2026-09-10): rapid 1s retries hammer the VK captcha
+			// API and escalate rate limiting (check status: BOT / ERROR_LIMIT).
+			// With manual captcha disabled (BUG-009) the old 120s WebView block no
+			// longer acts as an accidental pause, so back off explicitly.
+			delay := 1 * time.Second
+			if isCaptchaRateLimitError(err) {
+				delay = 20 * time.Second
+				turnLog("[STREAM %d] Captcha rate-limited, backing off %v...", s.id, delay)
+			}
+			turnLog("[STREAM %d] Error: %v. Reconnecting in %v...", s.id, err, delay)
 			select {
 			case <-s.ctx.Done():
 				return
-			case <-time.After(1 * time.Second):
+			case <-time.After(delay):
 			}
 		}
 	}
+}
+
+// isCaptchaRateLimitError reports whether err is caused by VK captcha rate
+// limiting (BOT / ERROR_LIMIT / CAPTCHA_WAIT_REQUIRED) and needs a longer
+// reconnect backoff instead of the fast 1s retry.
+func isCaptchaRateLimitError(err error) bool {
+	if err == nil {
+		return false
+	}
+	s := err.Error()
+	return strings.Contains(s, "CAPTCHA_WAIT_REQUIRED") ||
+		strings.Contains(s, "check status: BOT") ||
+		strings.Contains(s, "check status: ERROR_LIMIT")
 }
 
 // runNoDTLS handles packet relay without DTLS obfuscation

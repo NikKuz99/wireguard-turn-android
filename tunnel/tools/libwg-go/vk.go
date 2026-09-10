@@ -262,7 +262,13 @@ func getTokenChain(ctx context.Context, link string, creds VKCredentials, client
 	data = fmt.Sprintf("vk_join_link=https://vk.com/call/join/%s&name=%s&access_token=%s", link, escapedName, token1)
 	urlAddr := fmt.Sprintf("https://api.vk.ru/method/calls.getAnonymousToken?v=5.275&client_id=%s", creds.ClientID)
 
-	manualCaptcha := true
+	// BUG-009 workaround (2026-09-10): manual captcha WebView DISABLED.
+	// VK BFF SPA does not render in Android 7 WebView (eternal white screen),
+	// blocks the credential loop for 120s and the activity never closes (BUG-008).
+	// The auto/slider retry loop (CAPTCHA_WAIT_REQUIRED -> 1s reconnect) re-solves
+	// the captcha in seconds (verified: cycle 2 solved in 2s via slider POC).
+	// Re-enable only after WebView BFF rendering is fixed. See lessons_learned.md.
+	manualCaptcha := false
 	autoCaptchaSliderPOC := true
 	streamID := 0
 	

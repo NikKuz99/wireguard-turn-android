@@ -181,6 +181,79 @@ def test_captcha_multiple_patterns():
     return r
 
 
+def test_captcha_webview_auto_close():
+    """CaptchaActivity auto-closes on timeout — BUG-008 (eternal white screen) guard.
+
+    BUG-008 (2026-09-10): when the VK BFF captcha page never rendered in the
+    WebView (white screen), the activity stayed open forever — even after the
+    retry loop solved the captcha via slider POC and the tunnel connected.
+    Fix: internal watchdog (CAPTCHA_ACTIVITY_TIMEOUT_MS + postDelayed + finish).
+    """
+    r = TestResult("captcha_webview_auto_close", "captcha")
+    kt = f"{REPO}/ui/src/main/java/com/wireguard/android/activity/CaptchaActivity.kt"
+    code, out, _ = run_cmd(
+        f"grep -c 'CAPTCHA_ACTIVITY_TIMEOUT_MS' {kt} || true"
+    )
+    count = int(out.strip()) if out.strip().isdigit() else 0
+    code2, out2, _ = run_cmd(
+        f"grep -c 'removeCallbacksAndMessages' {kt} || true"
+    )
+    count2 = int(out2.strip()) if out2.strip().isdigit() else 0
+    r.passed = count >= 2 and count2 >= 1  # const declaration + timer usage + cleanup
+    r.message = (
+        f"Auto-close watchdog present (timer refs: {count}, cleanup: {count2})"
+        if r.passed
+        else "Auto-close watchdog missing (BUG-008: captcha WebView can stay on screen forever)"
+    )
+    return r
+
+
+def test_captcha_manual_mode_disabled():
+    """Manual captcha WebView disabled while BFF SPA does not render — BUG-009 workaround.
+
+    BUG-009 (2026-09-10): manual fallback WebView showed an eternal white screen
+    (VK BFF SPA not rendering on Android 7) and blocked the credential loop for
+    120s per attempt. Disabled in favour of the fast auto/slider retry loop.
+    """
+    r = TestResult("captcha_manual_mode_disabled", "captcha")
+    code, out, _ = run_cmd(
+        f"grep -c 'manualCaptcha := false' {REPO}/tunnel/tools/libwg-go/vk.go || true"
+    )
+    count = int(out.strip()) if out.strip().isdigit() else 0
+    r.passed = count == 1
+    r.message = (
+        "Manual captcha disabled (fast retry loop handles solving)"
+        if r.passed
+        else "manualCaptcha := false not found — manual WebView enabled (white-screen + 120s block risk)"
+    )
+    return r
+
+
+def test_captcha_rate_limit_backoff():
+    """Captcha rate-limit errors use long reconnect backoff — BUG-010 mitigation.
+
+    BUG-010 (2026-09-10): with manual captcha disabled, rapid 1s retries hammer
+    the VK captcha API and escalate rate limiting (check status: BOT / ERROR_LIMIT).
+    Fix: 20s backoff when the error is captcha-rate-limit-related.
+    """
+    r = TestResult("captcha_rate_limit_backoff", "captcha")
+    code, out, _ = run_cmd(
+        f"grep -c 'isCaptchaRateLimitError' {REPO}/tunnel/tools/libwg-go/turn-client.go || true"
+    )
+    count = int(out.strip()) if out.strip().isdigit() else 0
+    code2, out2, _ = run_cmd(
+        f"grep -c '20 \* time.Second' {REPO}/tunnel/tools/libwg-go/turn-client.go || true"
+    )
+    count2 = int(out2.strip()) if out2.strip().isdigit() else 0
+    r.passed = count >= 1 and count2 >= 1
+    r.message = (
+        f"Backoff present (helper refs: {count}, 20s delay: {count2})"
+        if r.passed
+        else "Captcha backoff missing — 1s retries will escalate VK rate limiting"
+    )
+    return r
+
+
 # ─── 4. Config parser tests ──────────────────────────────────────────────────
 
 def test_conf_parser_exists():
@@ -326,6 +399,9 @@ ALL_TESTS = [
     # Captcha
     test_captcha_bff_pattern,
     test_captcha_multiple_patterns,
+    test_captcha_webview_auto_close,
+    test_captcha_manual_mode_disabled,
+    test_captcha_rate_limit_backoff,
     # Parser
     test_conf_parser_exists,
     test_conf_android_export_format,
@@ -347,7 +423,7 @@ ALL_TESTS = [
 CATEGORIES = {
     "build": ["apk_exists"],
     "version": ["version_in_apk", "version_format"],
-    "captcha": ["captcha_bff_pattern", "captcha_multiple_patterns"],
+    "captcha": ["captcha_bff_pattern", "captcha_multiple_patterns", "captcha_webview_auto_close", "captcha_manual_mode_disabled", "captcha_rate_limit_backoff"],
     "parser": ["conf_parser_exists", "conf_android_export_format", "conf_parser_imports_wgt"],
     "dns": ["dns_cache_persist_exists", "dns_cache_vk_hosts", "dns_cache_baseline_ips"],
     "watchdog": ["handshake_watchdog_exists", "handshake_watchdog_threshold"],

@@ -13,6 +13,8 @@ import android.net.NetworkCapabilities
 import android.net.Uri
 import android.net.http.SslError
 import android.os.Bundle
+import android.os.Handler
+import android.os.Looper
 import android.os.StrictMode
 import android.util.Log
 import android.webkit.JavascriptInterface
@@ -38,11 +40,17 @@ class CaptchaActivity : AppCompatActivity() {
     private var previousNetwork: Network? = null
     private var didBindNetwork = false
     private var webView: WebView? = null
+    private var captchaTimeoutHandler: Handler? = null
 
     companion object {
         private const val TAG = "WireGuard/CaptchaActivity"
         private const val EXTRA_REDIRECT_URI = "redirect_uri"
         private const val CAPTCHA_TIMEOUT_SECONDS = 120L
+
+        // BUG-008 guard: hard limit for the activity lifetime. Must stay BELOW
+        // CAPTCHA_TIMEOUT_SECONDS so the result future is completed by the activity
+        // (clean empty-token delivery) instead of a raw timeout on the Go side.
+        private const val CAPTCHA_ACTIVITY_TIMEOUT_MS = 90_000L
 
         @Volatile
         private var pendingResult: CompletableFuture<String>? = null
@@ -368,6 +376,21 @@ class CaptchaActivity : AppCompatActivity() {
 
         this.webView = webView
         setContentView(webView)
+
+        // BUG-008 fix (2026-09-10): auto-close watchdog. The VK BFF captcha page may
+        // never render in Android 7 WebView (white screen, no widget, no checkbox).
+        // Before this fix the activity stayed on screen forever even after the
+        // retry loop solved the captcha via slider POC. This timer guarantees the
+        // activity finishes and delivers an empty token within 90s.
+        captchaTimeoutHandler = Handler(Looper.getMainLooper())
+        captchaTimeoutHandler?.postDelayed({
+            if (pendingResult?.isDone != true) {
+                Log.w(TAG, "Captcha auto-timeout (BUG-008 guard) — closing WebView")
+                deliverResult("")
+                finish()
+            }
+        }, CAPTCHA_ACTIVITY_TIMEOUT_MS)
+
         webView.loadUrl(redirectUri)
     }
 
@@ -777,6 +800,9 @@ class CaptchaActivity : AppCompatActivity() {
     }
 
     override fun onDestroy() {
+        // BUG-008: cancel the watchdog timer — activity is finishing anyway
+        captchaTimeoutHandler?.removeCallbacksAndMessages(null)
+        captchaTimeoutHandler = null
         // Destroy WebView to prevent memory leaks
         webView?.apply {
             stopLoading()
