@@ -229,6 +229,91 @@ def test_captcha_manual_mode_disabled():
     return r
 
 
+
+
+# ─── BUG-011 tests (2026-09-11): VK captcha API overhaul ────────────────────
+
+def test_captcha_settings_from_initsession():
+    """BUG-011: captcha settings must come from initSession content_settings
+    (VK removed captcha_settings from captchaNotRobot.settings response)."""
+    r = TestResult("captcha_settings_from_initsession", "captcha")
+    code, out, _ = run_cmd(
+        f"grep -c 'content_settings' {REPO}/tunnel/tools/libwg-go/slider_captcha.go || true"
+    )
+    count = int(out.strip()) if out.strip().isdigit() else 0
+    code2, out2, _ = run_cmd(
+        f"grep -c 'requestInitSession' {REPO}/tunnel/tools/libwg-go/slider_captcha.go || true"
+    )
+    count2 = int(out2.strip()) if out2.strip().isdigit() else 0
+    r.passed = count >= 1 and count2 >= 2
+    r.message = (
+        f"initSession content_settings parsing present ({count}/{count2} refs)"
+        if r.passed
+        else "BUG-011 fix missing: captcha settings not read from initSession"
+    )
+    return r
+
+
+def test_captcha_stdlib_http():
+    """BUG-011: VK fingerprints the tls-client uTLS hello; captcha requests
+    must use Go stdlib net/http (tls-client gets status=BOT)."""
+    r = TestResult("captcha_stdlib_http", "captcha")
+    code, out, _ = run_cmd(
+        f"grep -c 'http.NewRequestWithContext' {REPO}/tunnel/tools/libwg-go/slider_captcha.go || true"
+    )
+    slider = int(out.strip()) if out.strip().isdigit() else 0
+    code2, out2, _ = run_cmd(
+        f"grep -c 'fhttp.NewRequestWithContext' {REPO}/tunnel/tools/libwg-go/slider_captcha.go || true"
+    )
+    fhttp_slider = int(out2.strip()) if out2.strip().isdigit() else 0
+    r.passed = slider >= 1 and fhttp_slider == 0
+    r.message = (
+        f"captcha uses stdlib net/http ({slider} stdlib, {fhttp_slider} fhttp)"
+        if r.passed
+        else "BUG-011: captcha still uses fhttp/tls-client (VK returns BOT)"
+    )
+    return r
+
+
+def test_captcha_dynamic_debug_info():
+    """BUG-011: debug_info is per-page-load UUID (brlefapmjnpg in page HTML),
+    must be extracted dynamically, not hardcoded."""
+    r = TestResult("captcha_dynamic_debug_info", "captcha")
+    code, out, _ = run_cmd(
+        f"grep -c 'brlefapmjnpg' {REPO}/tunnel/tools/libwg-go/vk_captcha.go || true"
+    )
+    count = int(out.strip()) if out.strip().isdigit() else 0
+    r.passed = count >= 1
+    r.message = f"dynamic debug_info extraction present ({count} refs)" if r.passed else "BUG-011: debug_info not extracted from page (stale hardcoded value = bot marker)"
+    return r
+
+
+def test_captcha_adfp_generated():
+    """BUG-011: adFp (rb_sync id) generated as 21-char nanoid and sent in
+    captcha API params."""
+    r = TestResult("captcha_adfp_generated", "captcha")
+    code, out, _ = run_cmd(
+        f"grep -c 'generateAdFpId' {REPO}/tunnel/tools/libwg-go/vk_captcha.go || true"
+    )
+    count = int(out.strip()) if out.strip().isdigit() else 0
+    r.passed = count >= 2
+    r.message = f"adFp nanoid generation present ({count} refs)" if r.passed else "BUG-011: adFp not generated (empty adFp = bot marker)"
+    return r
+
+
+def test_captcha_pow_telemetry():
+    """BUG-011: v2 PoW hash must carry telemetry + tel_hash (VK validates
+    payload structure)."""
+    r = TestResult("captcha_pow_telemetry", "captcha")
+    code, out, _ = run_cmd(
+        f"grep -c 'stableTelemetryHash' {REPO}/tunnel/tools/libwg-go/vk_captcha.go || true"
+    )
+    count = int(out.strip()) if out.strip().isdigit() else 0
+    r.passed = count >= 2
+    r.message = f"v2 telemetry hash present ({count} refs)" if r.passed else "BUG-011: PoW hash missing telemetry payload"
+    return r
+
+
 def test_captcha_rate_limit_backoff():
     """Captcha rate-limit errors use long reconnect backoff — BUG-010 mitigation.
 
@@ -401,6 +486,11 @@ ALL_TESTS = [
     test_captcha_multiple_patterns,
     test_captcha_webview_auto_close,
     test_captcha_manual_mode_disabled,
+    test_captcha_settings_from_initsession,
+    test_captcha_stdlib_http,
+    test_captcha_dynamic_debug_info,
+    test_captcha_adfp_generated,
+    test_captcha_pow_telemetry,
     test_captcha_rate_limit_backoff,
     # Parser
     test_conf_parser_exists,
