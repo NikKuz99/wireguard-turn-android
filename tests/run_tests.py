@@ -513,7 +513,7 @@ ALL_TESTS = [
 CATEGORIES = {
     "build": ["apk_exists"],
     "version": ["version_in_apk", "version_format"],
-    "captcha": ["captcha_bff_pattern", "captcha_multiple_patterns", "captcha_webview_auto_close", "captcha_manual_mode_disabled", "captcha_rate_limit_backoff"],
+    "captcha": ["captcha_bff_pattern", "captcha_multiple_patterns", "captcha_webview_auto_close", "captcha_manual_mode_disabled", "captcha_settings_from_initsession", "captcha_stdlib_http", "captcha_dynamic_debug_info", "captcha_adfp_generated", "captcha_pow_telemetry", "captcha_rate_limit_backoff"],
     "parser": ["conf_parser_exists", "conf_android_export_format", "conf_parser_imports_wgt"],
     "dns": ["dns_cache_persist_exists", "dns_cache_vk_hosts", "dns_cache_baseline_ips"],
     "watchdog": ["handshake_watchdog_exists", "handshake_watchdog_threshold"],
