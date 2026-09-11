@@ -275,6 +275,34 @@ def test_captcha_stdlib_http():
     return r
 
 
+
+def test_captcha_client_custom_dialer():
+    """BUG-012: stdlib captcha client must use the app-wide custom dialer
+    (cascading DNS via vkHosts + protectControl) and bundled CA — the default
+    transport breaks on Android: lookup on [::1]:53 -> connection refused
+    (no /etc/resolv.conf), and Go has no system CA pool on Android."""
+    r = TestResult("captcha_client_custom_dialer", "captcha")
+    code, out, _ = run_cmd(
+        f"grep -c 'http.Client{{Timeout: 25' {REPO}/tunnel/tools/libwg-go/vk_captcha.go || true"
+    )
+    bare = int(out.strip()) if out.strip().isdigit() else 0
+    code2, out2, _ = run_cmd(
+        f"grep -c 'getCustomDialContext' {REPO}/tunnel/tools/libwg-go/vk_captcha.go || true"
+    )
+    dialer = int(out2.strip()) if out2.strip().isdigit() else 0
+    code3, out3, _ = run_cmd(
+        f"grep -c 'loadCABundle' {REPO}/tunnel/tools/libwg-go/vk_captcha.go || true"
+    )
+    ca = int(out3.strip()) if out3.strip().isdigit() else 0
+    r.passed = bare == 0 and dialer >= 1 and ca >= 1
+    r.message = (
+        f"captcha client: custom dialer ({dialer}) + CA bundle ({ca}), no bare client"
+        if r.passed
+        else "BUG-012: captcha stdlib client uses default transport (DNS [::1]:53 refused on Android, no CA)"
+    )
+    return r
+
+
 def test_captcha_dynamic_debug_info():
     """BUG-011: debug_info is per-page-load UUID (brlefapmjnpg in page HTML),
     must be extracted dynamically, not hardcoded."""
@@ -488,6 +516,7 @@ ALL_TESTS = [
     test_captcha_manual_mode_disabled,
     test_captcha_settings_from_initsession,
     test_captcha_stdlib_http,
+    test_captcha_client_custom_dialer,
     test_captcha_dynamic_debug_info,
     test_captcha_adfp_generated,
     test_captcha_pow_telemetry,
@@ -513,7 +542,7 @@ ALL_TESTS = [
 CATEGORIES = {
     "build": ["apk_exists"],
     "version": ["version_in_apk", "version_format"],
-    "captcha": ["captcha_bff_pattern", "captcha_multiple_patterns", "captcha_webview_auto_close", "captcha_manual_mode_disabled", "captcha_settings_from_initsession", "captcha_stdlib_http", "captcha_dynamic_debug_info", "captcha_adfp_generated", "captcha_pow_telemetry", "captcha_rate_limit_backoff"],
+    "captcha": ["captcha_bff_pattern", "captcha_multiple_patterns", "captcha_webview_auto_close", "captcha_manual_mode_disabled", "captcha_settings_from_initsession", "captcha_stdlib_http", "captcha_dynamic_debug_info", "captcha_adfp_generated", "captcha_pow_telemetry", "captcha_rate_limit_backoff", "captcha_client_custom_dialer"],
     "parser": ["conf_parser_exists", "conf_android_export_format", "conf_parser_imports_wgt"],
     "dns": ["dns_cache_persist_exists", "dns_cache_vk_hosts", "dns_cache_baseline_ips"],
     "watchdog": ["handshake_watchdog_exists", "handshake_watchdog_threshold"],

@@ -15,6 +15,7 @@ import (
 	"context"
 	"crypto/md5"
 	"crypto/sha256"
+	"crypto/tls"
 	"encoding/base64"
 	"encoding/hex"
 	"encoding/json"
@@ -216,7 +217,22 @@ func solveVkCaptchaAutomatic(ctx context.Context, streamID int, client tlsclient
 
 func solveVkCaptcha(ctx context.Context, captchaErr *VkCaptchaError, streamID int, client tlsclient.HttpClient, profile Profile, useSliderPOC bool) (string, error) {
 	// BUG-011: VK fingerprints the tls-client uTLS hello; captcha calls use stdlib
-	httpClient := &http.Client{Timeout: 25 * time.Second}
+	// BUG-012: default stdlib transport is unusable on Android: no /etc/resolv.conf
+	// (lookup hits [::1]:53 -> connection refused) and no system CA pool for Go.
+	// Route through the app-wide custom dialer (cascading DNS via vkHosts +
+	// protectControl) and verify TLS against the bundled CA, like every other
+	// HTTP path in the app (turnHTTPClient, wbHTTPClient).
+	httpClient := &http.Client{
+		Timeout: 25 * time.Second,
+		Transport: &http.Transport{
+			DialContext:         getCustomDialContext,
+			ForceAttemptHTTP2:   true,
+			MaxIdleConns:        10,
+			IdleConnTimeout:     30 * time.Second,
+			TLSHandshakeTimeout: 10 * time.Second,
+			TLSClientConfig:     &tls.Config{RootCAs: loadCABundle()},
+		},
+	}
 	adFp := generateAdFpId()
 	registerAdFpFingerprint(ctx, adFp, profile, httpClient)
 	if useSliderPOC {
