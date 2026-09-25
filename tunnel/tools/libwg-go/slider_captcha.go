@@ -452,37 +452,49 @@ func parseCaptchaBootstrapHTML(html string) (*captchaBootstrap, error) {
 	// VK periodically changes the captcha page structure:
 	//   1. Classic: const powInput = "..."
 	//   2. BFF obfuscated: }("POW_INPUT",DIFFICULTY,"pow_timeout"))
-	powInputPatterns := []*regexp.Regexp{
-		regexp.MustCompile(`const\s+powInput\s*=\s*"([^"]+)"`),
-		regexp.MustCompile(`\}\("([^"]+)",(\d+),"pow_timeout"\)`),
-	// BUG-013 (2026-09-25): VK switched BFF obfuscator from double quotes to
-	// single quotes around the powInput arg. Pattern matches:
-	//   }('AxKyoM9mSvGhdPip',2,'pow_timeout',["native_integrity",...])
-	// Without this, bootstrap fails and check returns ERROR (no valid PoW hash).
-	regexp.MustCompile(`\}\('([^']+)',(\d+),'pow_timeout'`),
-	}
+	// v0.7.0 architecture (BUG-007/BUG-013 lessons): structure-based
+	// tokenizer extraction first (jstoken.go + pow_extract.go) — immune
+	// to obfuscator drift in quote style, spacing and number bases — with
+	// the legacy regex patterns below as the safety net for non-obfuscated
+	// page variants.  §25 sync: desktop captcha_bootstrap.go.
 	var powInput string
-	for _, re := range powInputPatterns {
-		if m := re.FindStringSubmatch(html); len(m) >= 2 && m[1] != "" {
-			powInput = m[1]
-			break
+	var difficulty int
+	if seed, ok := extractPowSeed(html); ok {
+		powInput = seed.PowInput
+		difficulty = seed.Difficulty
+	} else {
+		powInputPatterns := []*regexp.Regexp{
+			regexp.MustCompile(`const\s+powInput\s*=\s*"([^"]+)"`),
+			regexp.MustCompile(`\}\("([^"]+)",(\d+),"pow_timeout"\)`),
+			// BUG-013 (2026-09-25): VK switched BFF obfuscator from double quotes to
+			// single quotes around the powInput arg. Pattern matches:
+			//   }('AxKyoM9mSvGhdPip',2,'pow_timeout',["native_integrity",...])
+			// Without this, bootstrap fails and check returns ERROR (no valid PoW hash).
+			regexp.MustCompile(`\}\('([^']+)',(\d+),'pow_timeout'`),
+		}
+		for _, re := range powInputPatterns {
+			if m := re.FindStringSubmatch(html); len(m) >= 2 && m[1] != "" {
+				powInput = m[1]
+				break
+			}
+		}
+		if powInput == "" {
+			return nil, fmt.Errorf("powInput not found in captcha HTML (tokenizer layers + %d regex patterns)", len(powInputPatterns))
 		}
 	}
-	if powInput == "" {
-		return nil, fmt.Errorf("powInput not found in captcha HTML (tried %d patterns)", len(powInputPatterns))
-	}
-
-	difficulty := 2
-	difficultyPatterns := []*regexp.Regexp{
-		regexp.MustCompile(`startsWith\('0'\.repeat\((\d+)\)\)`),
-		regexp.MustCompile(`const\s+difficulty\s*=\s*(\d+)`),
-		regexp.MustCompile(`\}\("[^"]+",(\d+),"pow_timeout"\)`),
-	}
-	for _, expr := range difficultyPatterns {
-		if match := expr.FindStringSubmatch(html); len(match) >= 2 {
-			if parsed, err := strconv.Atoi(match[1]); err == nil {
-				difficulty = parsed
-				break
+	if difficulty == 0 {
+		difficulty = 2
+		difficultyPatterns := []*regexp.Regexp{
+			regexp.MustCompile(`startsWith\('0'\.repeat\((\d+)\)\)`),
+			regexp.MustCompile(`const\s+difficulty\s*=\s*(\d+)`),
+			regexp.MustCompile(`\}\("[^"]+",(\d+),"pow_timeout"\)`),
+		}
+		for _, expr := range difficultyPatterns {
+			if match := expr.FindStringSubmatch(html); len(match) >= 2 {
+				if parsed, err := strconv.Atoi(match[1]); err == nil {
+					difficulty = parsed
+					break
+				}
 			}
 		}
 	}

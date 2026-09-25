@@ -169,6 +169,44 @@ def test_captcha_bff_pattern():
     return r
 
 
+def test_captcha_pow_tokenizer_arch():
+    """v0.7.0 architecture: tokenizer-based powInput extraction (jstoken.go + pow_extract.go).
+
+    Immune to obfuscator drift in quote style / spacing / number bases —
+    the failure modes of BUG-007 and BUG-013.  §25 sync with desktop
+    internal/core/{jstoken.go,pow_extract.go}.
+    """
+    import os
+    r = TestResult("captcha_pow_tokenizer_arch", "captcha")
+    base = REPO + "/tunnel/tools/libwg-go"
+    required = [
+        "/jstoken.go",
+        "/pow_extract.go",
+        "/pow_extract_test.go",
+        "/testdata/pow_bug013_single.html",
+        "/testdata/pow_bug007_double.html",
+        "/testdata/pow_variant_renamed.html",
+        "/testdata/pow_none.html",
+    ]
+    missing = [p for p in required if not os.path.exists(base + p)]
+    code, out, _ = run_cmd(f"grep -c 'extractPowSeed' {base}/slider_captcha.go || true")
+    wired = int(out.strip()) if out.strip().isdigit() else 0
+    r.passed = not missing and wired >= 1
+    r.message = ("v0.7.0 tokenizer architecture present and wired (refs: " + str(wired) + ")") if r.passed else ("missing: " + ", ".join(missing) if missing else "slider_captcha.go not wired to extractPowSeed")
+    return r
+
+
+def test_captcha_pow_single_quote():
+    """BUG-013 legacy fallback pattern present (single-quote BFF variant)."""
+    r = TestResult("captcha_pow_single_quote", "captcha")
+    code, out, _ = run_cmd(
+        f"grep -c 'BUG-013' {REPO}/tunnel/tools/libwg-go/slider_captcha.go || true"
+    )
+    count = int(out.strip()) if out.strip().isdigit() else 0
+    r.passed = count >= 1
+    r.message = f"BUG-013 single-quote legacy pattern present ({count} refs)" if r.passed else "BUG-013 pattern missing in slider_captcha.go"
+    return r
+
 def test_captcha_multiple_patterns():
     """Parser tries multiple patterns (not just one const pattern)."""
     r = TestResult("captcha_multiple_patterns", "captcha")
@@ -511,6 +549,8 @@ ALL_TESTS = [
     test_version_format,
     # Captcha
     test_captcha_bff_pattern,
+    test_captcha_pow_tokenizer_arch,
+    test_captcha_pow_single_quote,
     test_captcha_multiple_patterns,
     test_captcha_webview_auto_close,
     test_captcha_manual_mode_disabled,
@@ -542,7 +582,7 @@ ALL_TESTS = [
 CATEGORIES = {
     "build": ["apk_exists"],
     "version": ["version_in_apk", "version_format"],
-    "captcha": ["captcha_bff_pattern", "captcha_multiple_patterns", "captcha_webview_auto_close", "captcha_manual_mode_disabled", "captcha_settings_from_initsession", "captcha_stdlib_http", "captcha_dynamic_debug_info", "captcha_adfp_generated", "captcha_pow_telemetry", "captcha_rate_limit_backoff", "captcha_client_custom_dialer"],
+    "captcha": ["captcha_bff_pattern", "captcha_pow_tokenizer_arch", "captcha_pow_single_quote", "captcha_multiple_patterns", "captcha_webview_auto_close", "captcha_manual_mode_disabled", "captcha_settings_from_initsession", "captcha_stdlib_http", "captcha_dynamic_debug_info", "captcha_adfp_generated", "captcha_pow_telemetry", "captcha_rate_limit_backoff", "captcha_client_custom_dialer"],
     "parser": ["conf_parser_exists", "conf_android_export_format", "conf_parser_imports_wgt"],
     "dns": ["dns_cache_persist_exists", "dns_cache_vk_hosts", "dns_cache_baseline_ips"],
     "watchdog": ["handshake_watchdog_exists", "handshake_watchdog_threshold"],
