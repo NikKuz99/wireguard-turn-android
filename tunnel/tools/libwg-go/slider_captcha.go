@@ -455,6 +455,11 @@ func parseCaptchaBootstrapHTML(html string) (*captchaBootstrap, error) {
 	powInputPatterns := []*regexp.Regexp{
 		regexp.MustCompile(`const\s+powInput\s*=\s*"([^"]+)"`),
 		regexp.MustCompile(`\}\("([^"]+)",(\d+),"pow_timeout"\)`),
+	// BUG-013 (2026-09-25): VK switched BFF obfuscator from double quotes to
+	// single quotes around the powInput arg. Pattern matches:
+	//   }('AxKyoM9mSvGhdPip',2,'pow_timeout',["native_integrity",...])
+	// Without this, bootstrap fails and check returns ERROR (no valid PoW hash).
+	regexp.MustCompile(`\}\('([^']+)',(\d+),'pow_timeout'`),
 	}
 	var powInput string
 	for _, re := range powInputPatterns {
