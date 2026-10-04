@@ -46,6 +46,7 @@ class HandshakeWatchdog(
     }
 
     private var job: Job? = null
+    private var watchScope: CoroutineScope? = null
     private var lastRestartTime = 0L
     private var consecutiveRestarts = 0
 
@@ -55,6 +56,7 @@ class HandshakeWatchdog(
      */
     fun start(scope: CoroutineScope) {
         stop()
+        watchScope = scope
         consecutiveRestarts = 0
         Log.i(TAG, "Started watching tunnel: $tunnelName (poll=${POLL_INTERVAL_MS}ms, stale=${STALE_THRESHOLD_MS}ms)")
 
@@ -71,12 +73,21 @@ class HandshakeWatchdog(
                         if (sinceLastRestart < MIN_RESTART_INTERVAL_MS) {
                             Log.d(TAG, "Handshake stale but restart cooldown active (${sinceLastRestart / 1000}s < ${MIN_RESTART_INTERVAL_MS / 1000}s)")
                         } else if (consecutiveRestarts >= MAX_CONSECUTIVE_RESTARTS) {
-                            Log.w(TAG, "Handshake stale but max consecutive restarts ($MAX_CONSECUTIVE_RESTARTS) reached. Giving up.")
-                            // Reset counter after 10 minutes to allow future restarts
-                            if (sinceLastRestart > 600_000) {
-                                consecutiveRestarts = 0
-                                Log.i(TAG, "Reset restart counter after 10min cooldown")
+                            Log.e(TAG, "BUG-017: max restarts reached - tearing down tunnel '$tunnelName' (VPN stays down instead of a silent blackhole)")
+                            watchScope?.launch(Dispatchers.Main.immediate) {
+                                try {
+                                    val tm = getTunnelManager()
+                                    val tunnel = tm.getTunnels()[tunnelName]
+                                    if (tunnel != null) {
+                                        tm.setTunnelState(tunnel, Tunnel.State.DOWN)
+                                        Log.w(TAG, "BUG-017: tunnel '$tunnelName' brought DOWN after give-up")
+                                    }
+                                } catch (e: Exception) {
+                                    Log.e(TAG, "BUG-017: teardown after give-up failed: ${e.message}")
+                                }
                             }
+                            stop()
+                            return@launch
                         } else {
                             Log.w(TAG, "Handshake stale! Restarting TURN (attempt ${consecutiveRestarts + 1}/$MAX_CONSECUTIVE_RESTARTS)")
                             lastRestartTime = now

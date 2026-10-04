@@ -17,6 +17,7 @@ import "C"
 import (
 	"context"
 	"crypto/tls"
+	"errors"
 	"fmt"
 	"net"
 	"net/http"
@@ -43,10 +44,30 @@ func turnLog(format string, args ...interface{}) {
 	l.Printf(format, args...)
 }
 
+// BUG-016 (2026-10-04): Android 16 applies VPN traffic rules the moment the
+// VpnService starts, BEFORE the tunnel is established. An allocation socket
+// created in that window gets EPERM on the first send unless protect()
+// succeeded. wgProtectSocket returns -1 on failure - propagate it as a dial
+// error instead of silently continuing with an unprotected socket.
+var errProtectFailed = errors.New("wgProtectSocket failed (VPN service not ready?)")
+
 func protectControl(network, address string, c syscall.RawConn) error {
-	return c.Control(func(fd uintptr) {
-		C.wgProtectSocket(C.int(fd))
-	})
+	var protErr error
+	if err := c.Control(func(fd uintptr) {
+		if rc := C.wgProtectSocket(C.int(fd)); rc != 0 {
+			protErr = fmt.Errorf("%w: fd=%d %s/%s", errProtectFailed, int(fd), network, address)
+		}
+	}); err != nil {
+		return err
+	}
+	return protErr
+}
+
+func isProtectFailure(err error) bool { return errors.Is(err, errProtectFailed) }
+
+func isEPERM(err error) bool {
+	var errno syscall.Errno
+	return errors.As(err, &errno) && errno == syscall.EPERM
 }
 
 func init() {
@@ -201,7 +222,12 @@ func (s *stream) run(link string, peer *net.UDPAddr, udp bool, okchan chan<- str
 			// With manual captcha disabled (BUG-009) the old 120s WebView block no
 			// longer acts as an accidental pause, so back off explicitly.
 			delay := 1 * time.Second
-			if isCaptchaRateLimitError(err) {
+			if isProtectFailure(err) || isEPERM(err) {
+				// BUG-016: protect was not ready (VPN still establishing). Retry
+				// until the tunnel finishes establishing instead of hammering.
+				delay = 3 * time.Second
+				turnLog("[STREAM %d] Protect not ready (VPN establishing), retrying in %v...", s.id, delay)
+			} else if isCaptchaRateLimitError(err) {
 				delay = 20 * time.Second
 				turnLog("[STREAM %d] Captcha rate-limited, backing off %v...", s.id, delay)
 			}
