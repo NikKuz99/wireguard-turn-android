@@ -7,6 +7,7 @@ import (
 	"net"
 	"net/http"
 	"net/http/httptest"
+	"strings"
 	"testing"
 )
 
@@ -252,5 +253,26 @@ func TestTunFailBreaksChainInPassive(t *testing.T) {
 	_ = json.Unmarshal([]byte(out), &m)
 	if m["overall"] != "FAIL" {
 		t.Fatalf("overall: %v", m["overall"])
+	}
+}
+
+func TestProductionRedactionsMerge(t *testing.T) {
+	old := productionRedactions
+	defer func() { productionRedactions = old }()
+	SetProductionRedactions([]string{"PROD_SECRET"})
+	src := &fakeEphemeral{}
+	src.vk = ProbeResult{Status: StatusFail, ErrClass: ErrAuth, ErrRaw: "vk token PROD_SECRET rejected"}
+	src.turn, src.dtls, src.wg, src.rehs = okRes(), okRes(), okRes(), okRes()
+	src.tun = okRes()
+	oldState := activeState
+	defer SetStateSource(oldState)
+	SetStateSource(src)
+	req := `{"mode":"full","dns_hosts":["localhost"],"route_probe":"` + localUDPAddr(t) + `"}`
+	out := RunDiagnostics(req)
+	if strings.Contains(out, "PROD_SECRET") {
+		t.Fatalf("production secret leaked: %s", out)
+	}
+	if !strings.Contains(out, "[REDACTED]") {
+		t.Fatalf("no redaction marker: %s", out)
 	}
 }

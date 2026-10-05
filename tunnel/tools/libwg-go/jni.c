@@ -22,6 +22,7 @@ extern void wgNotifyNetworkChange();
 extern const char* getNetworkDnsServers(long long network_handle);
 extern void wgSetDnsCachePath(const char *path);
 extern void wgSaveDnsCacheNow();
+extern char *wgDiagnosticsRun(char *req_json);
 
 static JavaVM *java_vm;
 static jobject vpn_service_global;
@@ -229,6 +230,25 @@ int wgProtectSocket(int fd)
 	if (attached)
 		(*java_vm)->DetachCurrentThread(java_vm);
 	return ret;
+}
+
+/* Task 25: единственный вход Kotlin->Go для диагностики.
+ * Копирует паттерн существующего Java->Go external (префикс манглинга — как у них). */
+JNIEXPORT jstring JNICALL
+Java_com_wireguard_android_backend_TurnBackend_wgDiagnosticsRun(JNIEnv *env, jclass c, jstring req)
+{
+	if (req == NULL)
+		return (*env)->NewStringUTF(env, "{\"error\":\"null request\"}");
+	const char *creq = (*env)->GetStringUTFChars(env, req, NULL);
+	if (creq == NULL)
+		return (*env)->NewStringUTF(env, "{\"error\":\"jni oom\"}");
+	char *res = wgDiagnosticsRun((char *)creq);
+	(*env)->ReleaseStringUTFChars(env, req, creq);
+	if (res == NULL)
+		return (*env)->NewStringUTF(env, "{\"error\":\"engine returned null\"}");
+	jstring jres = (*env)->NewStringUTF(env, res);
+	free(res);
+	return jres;
 }
 
 JNIEXPORT jint JNICALL Java_com_wireguard_android_backend_GoBackend_wgTurnOn(JNIEnv *env, jclass c, jstring ifname, jint tun_fd, jstring settings)

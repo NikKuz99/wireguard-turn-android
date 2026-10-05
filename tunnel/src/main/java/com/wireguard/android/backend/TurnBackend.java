@@ -143,6 +143,15 @@ public final class TurnBackend {
     public static native void wgSetVpnService(@Nullable VpnService service);
 
     /**
+     * Task 25: runs the Go diagnostics engine and returns the report JSON.
+     * Blocking call (budget up to ~150 s) - must run off the main thread.
+     *
+     * @param reqJson request JSON ({"mode":"auto"|"passive"|"full"})
+     * @return report JSON (schema_version=1) or {"error":"..."}
+     */
+    public static native String wgDiagnosticsRun(String reqJson);
+
+    /**
      * Starts the native TURN proxy and returns a detailed startup status code.
      *
      * @param peerAddr Peer address

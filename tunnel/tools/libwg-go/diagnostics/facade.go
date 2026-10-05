@@ -144,6 +144,13 @@ var activeState StateSource
 // SetStateSource wires the production StateSource; called once at bind setup.
 func SetStateSource(s StateSource) { activeState = s }
 
+var productionRedactions []string
+
+// SetProductionRedactions задаёт продакшн-список секретов для I4.
+// Вызывается ОДИН раз из Go-side bridge (П3-2), не из Kotlin.
+// Поле redactions в reqJSON остаётся только для тестов.
+func SetProductionRedactions(list []string) { productionRedactions = list }
+
 // RunDiagnostics is the single entry point for the Kotlin layer.
 // Returns the Report JSON or {"error":"..."}. Never panics; global budget 150s.
 // MUST be called off the Android main thread (it blocks for the whole run).
@@ -178,7 +185,7 @@ func RunDiagnostics(reqJSON string) (out string) {
 	if req.RouteProbe != "" {
 		o.RouteProbeAddr = req.RouteProbe
 	}
-	o.Redactions = req.Redactions
+	o.Redactions = append(append([]string{}, productionRedactions...), req.Redactions...)
 
 	mode := req.Mode
 	if mode == "auto" {
