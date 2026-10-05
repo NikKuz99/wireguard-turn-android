@@ -172,10 +172,10 @@ func TestRunDiagnosticsWiringErrors(t *testing.T) {
 	defer SetStateSource(old)
 	SetStateSource(nil)
 	if out := RunDiagnostics(`{"mode":"auto"}`); out != `{"error":"state source not wired"}` {
-		t.Fatalf(out)
+		t.Fatalf("%s", out)
 	}
 	if out := RunDiagnostics(`{bad json`); out != `{"error":"bad request json"}` {
-		t.Fatalf(out)
+		t.Fatalf("%s", out)
 	}
 }
 
