@@ -307,4 +307,14 @@
     <!-- Strings still referenced by code (kernel module backend) -->
     <string name="type_name_kernel_module">Kernel module</string>
     <string name="module_version_error">Unable to determine kernel module version</string>
+    <!-- Diagnostics (Task 25) -->
+    <string name="diag_title">Диагностика</string>
+    <string name="diag_run">Запустить диагностику</string>
+    <string name="diag_share_text">Поделиться отчётом</string>
+    <string name="diag_share_json">Поделиться JSON</string>
+    <string name="diag_copy">Копировать текст отчёта</string>
+    <string name="diag_banner_passive">Туннель активен: пассивная проверка (без разрыва соединения)</string>
+    <string name="diag_banner_full">Туннель не активен: полная проверка канала</string>
+    <string name="diag_running">Выполняется: %1$s</string>
+    <string name="diag_copied">Отчёт скопирован</string>
 </resources>
