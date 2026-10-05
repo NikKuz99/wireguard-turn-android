@@ -20,6 +20,7 @@ object ReportRenderer {
         "rehandshake_invasive_when_connected" to "пропущено: инвазивно при живом туннеле",
         "requires_active_tunnel" to "пропущено: требуется активное подключение",
         "diagnostics_does_not_start_vpn" to "пропущено: диагностика не поднимает VPN",
+        "requires_ephemeral_session_v1_9" to "пропущено: эфемерная сессия — планируется в версии 1.9",
     )
 
     private val CLASSES = mapOf(
@@ -42,6 +43,9 @@ object ReportRenderer {
         DiagStatus.FAIL -> "обнаружены проблемы"
         DiagStatus.SKIP -> "неполная диагностика"
     }
+
+    fun stageLine(n: Int, s: DiagStage): String =
+        "$n. ${glyph(s.status)} ${TITLES[s.id] ?: s.id} — ${s.durationMs} мс${suffix(s)}"
 
     fun render(r: DiagReport, appVersion: String): String = buildString {
         appendLine("TurnGuard — отчёт диагностики")

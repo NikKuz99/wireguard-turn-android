@@ -63,7 +63,20 @@ func protectControl(network, address string, c syscall.RawConn) error {
 	return protErr
 }
 
-func isProtectFailure(err error) bool { return errors.Is(err, errProtectFailed) }
+// diagProtectFailCount: monotonic since process start; read by the diagnostics bridge.
+var diagProtectFailCount atomic.Uint64
+
+func isProtectFailure(err error) bool {
+	if errors.Is(err, errProtectFailed) {
+		diagProtectFailCount.Add(1)
+		return true
+	}
+	return false
+}
+
+// diagEpermCount: monotonic since process start; read by the diagnostics
+// bridge (Task 25, BUG-016 signal).
+var diagEpermCount atomic.Uint64
 
 func isEPERM(err error) bool {
 	if err == nil {
@@ -71,11 +84,16 @@ func isEPERM(err error) bool {
 	}
 	var errno syscall.Errno
 	if errors.As(err, &errno) && errno == syscall.EPERM {
+		diagEpermCount.Add(1)
 		return true
 	}
 	// Д-3: pion wraps via %v and drops the %w chain - fall back to the
 	// canonical string form so the BUG-016 retry loop still classifies it.
-	return strings.Contains(err.Error(), "operation not permitted")
+	if strings.Contains(err.Error(), "operation not permitted") {
+		diagEpermCount.Add(1)
+		return true
+	}
+	return false
 }
 
 func init() {
