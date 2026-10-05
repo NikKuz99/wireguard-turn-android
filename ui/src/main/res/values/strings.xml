@@ -318,4 +318,5 @@
     <string name="diag_running">Выполняется: %1$s</string>
     <string name="diag_copied">Отчёт скопирован</string>
     <string name="diag_failed">Диагностика не выполнена</string>
+    <string name="diag_details">Технические детали</string>
 </resources>
