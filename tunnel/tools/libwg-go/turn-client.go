@@ -20,6 +20,7 @@ import (
 	"errors"
 	"fmt"
 	"net"
+	"strings"
 	"net/http"
 	"os"
 	"strings"
@@ -66,8 +67,16 @@ func protectControl(network, address string, c syscall.RawConn) error {
 func isProtectFailure(err error) bool { return errors.Is(err, errProtectFailed) }
 
 func isEPERM(err error) bool {
+	if err == nil {
+		return false
+	}
 	var errno syscall.Errno
-	return errors.As(err, &errno) && errno == syscall.EPERM
+	if errors.As(err, &errno) && errno == syscall.EPERM {
+		return true
+	}
+	// Д-3: pion wraps via %v and drops the %w chain - fall back to the
+	// canonical string form so the BUG-016 retry loop still classifies it.
+	return strings.Contains(err.Error(), "operation not permitted")
 }
 
 func init() {
