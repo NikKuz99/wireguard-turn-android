@@ -59,6 +59,14 @@ const (
 	ErrInternal  ErrorClass = "INTERNAL"
 )
 
+// Skip reason codes (ASCII). The Kotlin layer maps them to RU texts.
+const (
+	ReasonChainBroken        = "upstream_stage_failed"
+	ReasonInvasiveReHS       = "rehandshake_invasive_when_connected"
+	ReasonNeedsLiveTunnel    = "requires_active_tunnel"
+	ReasonNoVpnInDiagnostics = "diagnostics_does_not_start_vpn"
+)
+
 // BlockingStage: FAIL here makes downstream stages meaningless (I2).
 func BlockingStage(id StageID) bool {
 	switch id {
@@ -116,6 +124,7 @@ func Run(ctx context.Context, mode string, probes []Probe, redact []string, tear
 		sr := StageReport{ID: p.ID()}
 		if broken { // I2
 			sr.Status = StatusSkip
+			sr.Details = map[string]any{"reason": ReasonChainBroken}
 			rep.Stages = append(rep.Stages, sr)
 			rep.Skip++
 			continue
