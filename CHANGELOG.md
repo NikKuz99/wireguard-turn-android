@@ -57,3 +57,20 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 
 - BUG-011: VK captcha API overhaul — settings from initSession, stdlib HTTP for
   captcha calls, dynamic debug_info, adFp, telemetry PoW.
+
+## [1.8.0] - 2026-10-06
+
+### Added
+
+- Diagnostics screen (Task 25): 10 channel-check stages — device network, DNS,
+  VK session, TURN relay, DTLS, WireGuard, tunnel, internet through the tunnel,
+  latency, re-handshake — each with timing and PASS/WARN/FAIL/SKIP status.
+  Passive mode while connected (no disruption), full mode otherwise. One-button
+  report sharing as text or JSON.
+- Socket-protection error counters (BUG-016) in the diagnostics report:
+  eperm_classified_total, protect_fail_total.
+
+### Changed
+
+- EPERM classification in the TURN client now recognizes the string form of
+  errors from network libraries.
