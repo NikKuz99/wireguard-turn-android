@@ -5,6 +5,15 @@ All notable changes to this project are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/).
 
+### Fixed
+
+- TURN startup errors now name the cause (DNS/network, busy local port,
+  DTLS certificate) instead of a bare "error -1", with matching Go/Kotlin
+  error codes (-11..-14).
+- Initial TURN start retries with a network gate instead of failing
+  instantly when connectivity is down (2026-10-09 incident class).
+- Redundant TURN proxy restart when tunnel restore raced a manual toggle.
+
 ## [1.7.0] - 2026-10-04
 
 ### Fixed
@@ -58,7 +67,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 - BUG-011: VK captcha API overhaul — settings from initSession, stdlib HTTP for
   captcha calls, dynamic debug_info, adFp, telemetry PoW.
 
-## [1.8.0] - 2026-10-06
+## [1.8.0] - 2026-10-09
 
 ### Added
 
