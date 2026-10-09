@@ -37,6 +37,12 @@ class TurnProxyManager(private val context: Context) {
         data object Success : TurnStartResult
         data class Failure(val code: Int, val message: String) : TurnStartResult
     }
+
+    // Mirror of start error codes in turn-client.go wgTurnProxyStart (keep in sync!)
+    private val startErrResolvePeer = -11
+    private val startErrBindLocal = -12
+    private val startErrDtlsCert = -13
+    private val startErrCancelled = -14
     
     // State
     private var activeTunnelName: String? = null
@@ -245,6 +251,10 @@ class TurnProxyManager(private val context: Context) {
                     val msg = when (ret) {
                         TurnBackend.WG_TURN_PROXY_ERROR_VK_LINK_EXPIRED ->
                             "TURN startup failed: VK call link expired"
+                        startErrResolvePeer -> "Failed to start TURN proxy: cannot resolve TURN server address (DNS/network). Check network connection. (error $ret)"
+                        startErrBindLocal -> "Failed to start TURN proxy: local UDP port is busy or unavailable. (error $ret)"
+                        startErrDtlsCert -> "Failed to start TURN proxy: DTLS certificate generation failed. (error $ret)"
+                        startErrCancelled -> "Failed to start TURN proxy: startup was cancelled by restart or tunnel stop. (error $ret)"
                         else -> "Failed to start TURN proxy (error $ret)"
                     }
                     Log.e(TAG, msg)
@@ -269,7 +279,7 @@ class TurnProxyManager(private val context: Context) {
             try {
                 TurnBackend.wgSaveDnsCacheNow()
             } catch (e: Throwable) {
-                Log.w(TAG, "DNS cache save failed: ${'$'}{e.message}")
+                Log.w(TAG, "DNS cache save failed: ${e.message}")
             }
 
             operationMutex.lock()
