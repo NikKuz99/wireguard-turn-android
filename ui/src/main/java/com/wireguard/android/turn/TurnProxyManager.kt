@@ -22,6 +22,8 @@ import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import java.util.concurrent.ConcurrentHashMap
 import kotlinx.coroutines.flow.collectLatest
+import kotlinx.coroutines.flow.first
+import kotlinx.coroutines.withTimeoutOrNull
 import java.net.Inet4Address
 
 /**
@@ -162,7 +164,7 @@ class TurnProxyManager(private val context: Context) {
             return TurnStartResult.Success
         }
 
-        val result = startForTunnelInternal(tunnelName, turnSettings)
+        val result = startWithRetry(tunnelName, turnSettings)
 
         if (result == TurnStartResult.Success) {
             // After initial start, allow network changes to trigger restarts.
@@ -174,6 +176,38 @@ class TurnProxyManager(private val context: Context) {
         }
 
         return result
+    }
+
+    /**
+     * FIX-2 (v1.8.0): retry the INITIAL TURN start on transient failures
+     * (DNS resolve / local bind). performRestartSequence already retries on
+     * network changes, but the initial start was single-shot: with the network
+     * down it failed instantly with a bare error (2026-10-09 16:47 class).
+     * Network gate: while offline, wait for connectivity (up to 45s) instead
+     * of burning attempts.
+     */
+    private suspend fun startWithRetry(tunnelName: String, settings: TurnSettings): TurnStartResult {
+        var attempts = 0
+        while (currentCoroutineContext().isActive && !userInitiatedStop) {
+            attempts++
+            val result = startForTunnelInternal(tunnelName, settings)
+            if (result is TurnStartResult.Success) return result
+            val failure = result as TurnStartResult.Failure
+            val retryable = failure.code == startErrResolvePeer || failure.code == startErrBindLocal
+            Log.w(TAG, "TURN start attempt $attempts failed: ${failure.message} (retryable=$retryable)")
+            if (!retryable || attempts >= 4) return result
+            val networkUp = withTimeoutOrNull(45_000L) {
+                networkMonitor.bestNetwork.first { it != null }
+            } != null
+            if (!networkUp) {
+                Log.w(TAG, "No network for 45s, giving up TURN start: ${failure.message}")
+                return result
+            }
+            val delayMs = if (attempts <= 2) 2000L else 6000L
+            Log.w(TAG, "TURN start retry in ${delayMs}ms (attempt ${attempts + 1}/4)")
+            delay(delayMs)
+        }
+        return TurnStartResult.Failure(startErrCancelled, "TURN startup cancelled")
     }
 
     suspend fun startForTunnel(tunnelName: String, settings: TurnSettings): TurnStartResult {
