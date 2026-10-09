@@ -164,6 +164,15 @@ class TurnProxyManager(private val context: Context) {
             return TurnStartResult.Success
         }
 
+        // FIX-3 (v1.8.0): single-flight. If the proxy is already running for this
+        // tunnel (tunnel restore racing a manual toggle, or WG re-establishing
+        // while the TURN session is healthy), skip the stop/restart bounce.
+        if (instances[tunnelName]?.running == true) {
+            Log.i(TAG, "TURN proxy already running for \"$tunnelName\", skipping restart")
+            appendLogLine(tunnelName, "TURN proxy already running, skipping restart")
+            return TurnStartResult.Success
+        }
+
         val result = startWithRetry(tunnelName, turnSettings)
 
         if (result == TurnStartResult.Success) {
