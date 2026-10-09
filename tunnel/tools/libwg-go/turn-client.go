@@ -541,8 +541,19 @@ var turnMutex sync.Mutex
 
 // Global credentials function for mode selection (set by wgTurnProxyStart)
 var globalGetCreds getCredsFunc
+
+// Start error codes for wgTurnProxyStart (keep in sync with TurnProxyManager.kt).
+// 0 = success; -1 = legacy unknown; -1x = classified failure paths.
+const (
+	startErrResolvePeer = -11 // net.ResolveUDPAddr(peer) failed (all branches)
+	startErrBindLocal   = -12 // net.ListenPacket local bind failed
+	startErrDtlsCert    = -13 // DTLS self-signed certificate generation failed
+	startErrCancelled   = -14 // startup cancelled before first stream was ready
+	startErrStreamFail  = -15 // reserved (phase 2): all initial streams failed
+)
 //export wgTurnProxyStart
 func wgTurnProxyStart(peerAddrC *C.char, vklinkC *C.char, modeC *C.char, n C.int, udp C.int, listenAddrC *C.char, turnIpC *C.char, turnPortC C.int, peerTypeC *C.char, streamsPerCredC C.int, watchdogTimeoutC C.int, networkHandleC C.longlong, wrapKeyC *C.char) int32 {
+	startTs := time.Now()
 	// Force initialization of resolver and HTTP client with current environment
 	wgNotifyNetworkChange()
 
@@ -614,20 +625,32 @@ func wgTurnProxyStart(peerAddrC *C.char, vklinkC *C.char, modeC *C.char, n C.int
 			if err != nil {
 				turnLog("[DNS] Warning: failed to resolve peer: %v, using original", err)
 				peer, err = net.ResolveUDPAddr("udp", peerAddr)
-				if err != nil { return -1 }
+				if err != nil {
+					turnLog("[DNS] Peer resolve failed: %s: %v", peerAddr, err)
+					return startErrResolvePeer
+				}
 			} else {
 				peerAddr = net.JoinHostPort(resolvedIP, port)
 				turnLog("[DNS] Resolved peer %s -> %s", host, resolvedIP)
 				peer, err = net.ResolveUDPAddr("udp", peerAddr)
-				if err != nil { return -1 }
+				if err != nil {
+					turnLog("[DNS] Peer resolve failed: %s: %v", peerAddr, err)
+					return startErrResolvePeer
+				}
 			}
 		} else {
 			peer, err = net.ResolveUDPAddr("udp", peerAddr)
-			if err != nil { return -1 }
+			if err != nil {
+				turnLog("[DNS] Peer resolve failed: %s: %v", peerAddr, err)
+				return startErrResolvePeer
+			}
 		}
 	} else {
 		peer, err = net.ResolveUDPAddr("udp", peerAddr)
-		if err != nil { return -1 }
+		if err != nil {
+			turnLog("[DNS] Peer resolve failed: %s: %v", peerAddr, err)
+			return startErrResolvePeer
+		}
 	}
 
 	// Determine link for VK mode (for WB mode, link is just "wb")
@@ -641,7 +664,10 @@ func wgTurnProxyStart(peerAddrC *C.char, vklinkC *C.char, modeC *C.char, n C.int
 	}
 
 	lc, err := net.ListenPacket("udp", listenAddr)
-	if err != nil { return -1 }
+	if err != nil {
+		turnLog("[PROXY] Local bind failed %s: %v", listenAddr, err)
+		return startErrBindLocal
+	}
 	context.AfterFunc(ctx, func() { lc.Close() })
 
 	// Generate fresh Session ID for every run to avoid server-side conflicts
@@ -652,7 +678,7 @@ func wgTurnProxyStart(peerAddrC *C.char, vklinkC *C.char, modeC *C.char, n C.int
 	cert, err := selfsign.GenerateSelfSigned()
 	if err != nil {
 		turnLog("[PROXY] Failed to generate DTLS certificate: %v", err)
-		return -1
+		return startErrDtlsCert
 	}
 
 	ok := make(chan struct{}, int(n))
@@ -709,11 +735,11 @@ func wgTurnProxyStart(peerAddrC *C.char, vklinkC *C.char, modeC *C.char, n C.int
 
 	select {
 	case <-ok:
-		turnLog("[PROXY] First stream is ready, tunnel can start")
+		turnLog("[PROXY] First stream is ready, tunnel can start (in %s)", time.Since(startTs).Round(time.Millisecond))
 		return 0
 	case <-ctx.Done():
 		turnLog("[PROXY] PROXY startup cancelled")
-		return -1
+		return startErrCancelled
 	}
 }
 
