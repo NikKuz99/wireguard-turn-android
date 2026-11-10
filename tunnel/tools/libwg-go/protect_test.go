@@ -37,8 +37,12 @@ func TestIsEPERM(t *testing.T) {
 	if isEPERM(syscall.EACCES) {
 		t.Fatal("EACCES matched EPERM")
 	}
-	if isEPERM(errors.New("write udp 1.2.3.4:1->5.6.7.8:2: write: operation not permitted")) {
-		t.Fatal("pion string form not detected")
+	// Д-3: pion заворачивает ошибки через %v и рвёт цепочку %w — isEPERM
+	// намеренно распознаёт каноничную строку «operation not permitted»
+	// (см. комментарий в turn-client.go). Тест раньше ожидал обратное
+	// и вечно краснел на main.
+	if !isEPERM(errors.New("write udp 1.2.3.4:1->5.6.7.8:2: write: operation not permitted")) {
+		t.Fatal("pion string form (D-3 fallback) not detected")
 	}
 	if isEPERM(syscall.ECONNREFUSED) {
 		t.Fatal("ECONNREFUSED matched EPERM")
