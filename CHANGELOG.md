@@ -5,6 +5,23 @@ All notable changes to this project are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/).
 
+## [Unreleased]
+
+### Fixed
+
+- **TURN startup no longer hangs indefinitely when streams cannot connect.**
+  `wgTurnProxyStart` blocked forever when every stream kept failing (dead
+  network, rejected credentials): stream goroutines retry endlessly, so the
+  call never returned while holding the TURN start mutex — the toggle stayed
+  in the optimistic "connecting" state and a second toggle queued behind the
+  mutex. Startup now aborts with `error -15` as soon as every stream has
+  failed its first attempt, or after a 60 s hard timeout; `-15` is retryable
+  (like `-11`/`-12`), so the app-level retry with its connectivity gate
+  takes over. The startup context is also cancelled on early error exits
+  (`-11`/`-12`/`-13`) instead of lingering until the next start.
+
+## [1.8.0] - 2026-10-09
+
 ### Fixed
 
 - TURN startup errors now name the cause (DNS/network, busy local port,
