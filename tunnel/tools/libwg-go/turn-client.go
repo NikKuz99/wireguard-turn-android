@@ -552,7 +552,7 @@ const (
 	startErrStreamFail  = -15 // reserved (phase 2): all initial streams failed
 )
 //export wgTurnProxyStart
-func wgTurnProxyStart(peerAddrC *C.char, vklinkC *C.char, modeC *C.char, n C.int, udp C.int, listenAddrC *C.char, turnIpC *C.char, turnPortC C.int, peerTypeC *C.char, streamsPerCredC C.int, watchdogTimeoutC C.int, networkHandleC C.longlong, wrapKeyC *C.char) int32 {
+func wgTurnProxyStart(peerAddrC *C.char, vklinkC *C.char, modeC *C.char, n C.int, udp C.int, listenAddrC *C.char, turnIpC *C.char, turnPortC C.int, peerTypeC *C.char, streamsPerCredC C.int, watchdogTimeoutC C.int, networkHandleC C.longlong, wrapKeyC *C.char, endpointIpC *C.char) int32 {
 	startTs := time.Now()
 	// Force initialization of resolver and HTTP client with current environment
 	wgNotifyNetworkChange()
@@ -590,6 +590,16 @@ func wgTurnProxyStart(peerAddrC *C.char, vklinkC *C.char, modeC *C.char, n C.int
 		}
 	} else {
 		wrapKeyBytes = nil
+	}
+
+	// Last-known-good адрес endpoint-домена из настроек туннеля (аннотация
+	// #@wgt:EndpointIP выданного конфига): используется резолвером как
+	// последний резерв, когда DNS недоступен, а динамический кэш пуст.
+	// Адрес не вшит в код — передаётся клиентом с каждым конфигом.
+	if endpointIp := C.GoString(endpointIpC); endpointIp != "" {
+		if host, _, err := net.SplitHostPort(peerAddr); err == nil && net.ParseIP(host) == nil {
+			SetEndpointBaseline(host, endpointIp)
+		}
 	}
 
 	turnLog("[PROXY] Hub starting on %s (streams=%d, mode=%s, peerType=%s, streamsPerCred=%d, watchdogTimeout=%d, networkHandle=%d, wrap=%v)", listenAddr, int(n), mode, peerType, streamsPerCred, watchdogTimeout, networkHandle, wrapKeyBytes != nil)

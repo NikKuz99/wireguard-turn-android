@@ -81,6 +81,7 @@ type VkHosts struct {
 	metrics         map[string]*HostMetric // "domain:ip" → метрика
 	dnsOK           bool                   // работает ли DNS сейчас
 	lastDNS         time.Time              // когда последний раз DNS работал
+	lastDNSFail     time.Time              // когда последний раз DNS падал
 	pendingFailures map[string][]string    // домен → буфер неудач
 	pendingStarted  map[string]time.Time   // домен → когда начали буфер
 }
@@ -91,6 +92,42 @@ var vkHosts = &VkHosts{
 	pendingFailures: make(map[string][]string),
 	pendingStarted:  make(map[string]time.Time),
 	dnsOK:           true,
+}
+
+// endpointBaseline — last-known-good адреса endpoint-доменов, переданные
+// клиентом через аннотацию выданного конфигурации (#@wgt:EndpointIP) при
+// старте прокси. В отличие от статического списка VK-доменов выше, эти адреса
+// не вшиты в код: у каждого клиента свой, в репозитории их нет.
+var endpointBaseline = struct {
+	mu   sync.RWMutex
+	ips  map[string]string // домен → IP
+}{ips: make(map[string]string)}
+
+// dnsRetryCooldown — как часто перепроверять DNS после отказа, пока в кэше
+// есть валидные IP (кэш отдаётся мгновенно, но сеть могла вернуться).
+const dnsRetryCooldown = 30 * time.Second
+
+// SetEndpointBaseline регистрирует last-known-good адрес домена из настроек
+// туннеля (аннотация конфига, переживает перезапуск приложения на стороне
+// хранилища настроек Kotlin). Вызывается при каждом старте прокси.
+func SetEndpointBaseline(domain, ip string) {
+	if domain == "" || ip == "" || net.ParseIP(ip) == nil {
+		return
+	}
+	endpointBaseline.mu.Lock()
+	defer endpointBaseline.mu.Unlock()
+	if cur, ok := endpointBaseline.ips[domain]; ok && cur == ip {
+		return
+	}
+	endpointBaseline.ips[domain] = ip
+	turnLog("[VKHosts] Endpoint baseline for %s set from tunnel config", domain)
+}
+
+// getEndpointBaseline возвращает last-known-good адрес домена ("" если нет).
+func getEndpointBaseline(domain string) string {
+	endpointBaseline.mu.RLock()
+	defer endpointBaseline.mu.RUnlock()
+	return endpointBaseline.ips[domain]
 }
 
 func init() {
@@ -125,6 +162,12 @@ func (vh *VkHosts) allIPs(domain string) []string {
 		}
 	}
 
+	// Затем endpoint-адрес из настроек туннеля (последний успешный)
+	if ip := getEndpointBaseline(domain); ip != "" && !seen[ip] {
+		seen[ip] = true
+		ips = append(ips, ip)
+	}
+
 	// Затем baseline
 	for _, ip := range vkHostsBaseline[domain] {
 		if !seen[ip] {
@@ -136,16 +179,41 @@ func (vh *VkHosts) allIPs(domain string) []string {
 	return ips
 }
 
+// shouldAttemptDNS решает, пытаться ли снова резолвить через DNS после того,
+// как DNS уже падал (dnsOK=false). Задача 79: прежде dnsOK=false защёлкивался
+// навсегда (до перезапуска процесса) — единственный путь вернуть его в true
+// шёл через metrics-коллектор работающей сессии, поэтому после неудачного
+// старта все последующие старты падали с -11 даже на живой сети.
+//
+// Пробуем DNS, если:
+//   - для домена нет известных IP вовсе (без DNS старт в принципе невозможен), либо
+//   - с последнего отказа прошло больше dnsRetryCooldown (сеть могла вернуться).
+//
+// Если IP есть и мы внутри cooldown — отдаём кэш/baseline мгновенно, не тратя
+// по 10+ секунд на каскад таймаутов при каждой попытке старта.
+func (vh *VkHosts) shouldAttemptDNS(domain string, now time.Time) bool {
+	if len(vh.allIPs(domain)) == 0 {
+		return true
+	}
+	vh.mu.RLock()
+	defer vh.mu.RUnlock()
+	return now.Sub(vh.lastDNSFail) >= dnsRetryCooldown
+}
+
 // Resolve выбирает лучший IP для домена
 //
 // Логика:
-// 1. Если DNS работает — попробовать резолвнуть через hostCache.ResolveAll
+// 1. Если DNS стоит пробовать — резолвнуть через hostCache.ResolveAll
 //    (cascading DNS: system → Yandex → Google, возвращает ВСЕ A-записи)
 //    Если удалось — обновить dynamic всеми IP + вернуть лучший по метрикам
-// 2. Если DNS не работает — выбрать лучший из baseline+dynamic по метрикам
+// 2. Если DNS не работает — выбрать лучший из dynamic + baseline по метрикам
+//    (кэш последнего успешного резолва + адрес из настроек туннеля)
 func (vh *VkHosts) Resolve(ctx context.Context, domain string) (string, error) {
 	// 1. Попытка через DNS (cascading resolver, все A-записи)
-	if vh.dnsOK {
+	vh.mu.RLock()
+	dnsOK := vh.dnsOK
+	vh.mu.RUnlock()
+	if dnsOK || vh.shouldAttemptDNS(domain, time.Now()) {
 		ips, err := hostCache.ResolveAll(ctx, domain)
 		if err == nil && len(ips) > 0 {
 			// DNS сработал — обновляем dynamic всеми IP
@@ -178,8 +246,9 @@ func (vh *VkHosts) Resolve(ctx context.Context, domain string) (string, error) {
 		// DNS не сработал
 		vh.mu.Lock()
 		vh.dnsOK = false
+		vh.lastDNSFail = time.Now()
 		vh.mu.Unlock()
-		turnLog("[VKHosts] DNS failed for %s, falling back to baseline+dynamic", domain)
+		turnLog("[VKHosts] DNS failed for %s, falling back to endpoint+dynamic cache", domain)
 	}
 
 	// 2. Выбор лучшего IP из baseline + dynamic
@@ -218,8 +287,11 @@ func (vh *VkHosts) selectBestIP(domain string) (string, error) {
 	vh.mu.RUnlock()
 
 	if bestIP == "" {
-		// Все IP забракованы метриками — берём первый из baseline
-		if baseline := vkHostsBaseline[domain]; len(baseline) > 0 {
+		// Все IP забракованы метриками — адрес из настроек туннеля, затем VK-baseline
+		if ip := getEndpointBaseline(domain); ip != "" {
+			bestIP = ip
+			turnLog("[VKHosts] All IPs blacklisted for %s, using tunnel endpoint: %s", domain, bestIP)
+		} else if baseline := vkHostsBaseline[domain]; len(baseline) > 0 {
 			bestIP = baseline[0]
 			turnLog("[VKHosts] All IPs blacklisted for %s, using baseline: %s", domain, bestIP)
 		} else {
@@ -373,6 +445,7 @@ func (vh *VkHosts) MarkDNSFailed() {
 	vh.mu.Lock()
 	defer vh.mu.Unlock()
 	vh.dnsOK = false
+	vh.lastDNSFail = time.Now()
 }
 
 // IsDNSWorking возвращает true если DNS работал за последние 5 минут
