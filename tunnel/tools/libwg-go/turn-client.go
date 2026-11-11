@@ -132,6 +132,9 @@ type stream struct {
 	sessionID []byte
 	cert      *tls.Certificate
 	watchdogTimeout int
+	// onFirstFail вызывается один раз при первой неудаче стрима (используется
+	// wgTurnProxyStart для детекта «все стримы упали на первой попытке»).
+	onFirstFail func()
 }
 
 const iPacketBuffMaxSize = 2048;
@@ -153,6 +156,7 @@ var (
 )
 
 func (s *stream) run(link string, peer *net.UDPAddr, udp bool, okchan chan<- struct{}, turnIp string, turnPort int, peerType string) {
+	firstFailReported := false
 	for {
 		select {
 		case <-s.ctx.Done(): return
@@ -243,6 +247,13 @@ func (s *stream) run(link string, peer *net.UDPAddr, udp bool, okchan chan<- str
 		}()
 
 		if err != nil && s.ctx.Err() == nil {
+			// Первая неудача стрима — сигнал для allFailed-детекта старта.
+			if !firstFailReported {
+				firstFailReported = true
+				if s.onFirstFail != nil {
+					s.onFirstFail()
+				}
+			}
 			// BUG-010 backoff (2026-09-10): rapid 1s retries hammer the VK captcha
 			// API and escalate rate limiting (check status: BOT / ERROR_LIMIT).
 			// With manual captcha disabled (BUG-009) the old 120s WebView block no
@@ -549,8 +560,16 @@ const (
 	startErrBindLocal   = -12 // net.ListenPacket local bind failed
 	startErrDtlsCert    = -13 // DTLS self-signed certificate generation failed
 	startErrCancelled   = -14 // startup cancelled before first stream was ready
-	startErrStreamFail  = -15 // reserved (phase 2): all initial streams failed
+	startErrStreamFail  = -15 // all streams failed their first attempt, or startup timeout
 )
+
+// startupTimeout — жёсткий лимит на ожидание первого готового стрима. Без него
+// wgTurnProxyStart зависал навсегда (стримы ретраятся бесконечно), удерживая
+// operationMutex в Kotlin: тумблер оставался в «Соединение...», повторный
+// тумблер вставал в очередь за мьютексом. 60 с с запасом покрывают медленный
+// старт (капча + VK auth + DTLS); быстрый отказ при мёртвой сети даёт
+// allFailed (см. ниже), а не этот таймаут.
+const startupTimeout = 60 * time.Second
 //export wgTurnProxyStart
 func wgTurnProxyStart(peerAddrC *C.char, vklinkC *C.char, modeC *C.char, n C.int, udp C.int, listenAddrC *C.char, turnIpC *C.char, turnPortC C.int, peerTypeC *C.char, streamsPerCredC C.int, watchdogTimeoutC C.int, networkHandleC C.longlong, wrapKeyC *C.char, endpointIpC *C.char) int32 {
 	startTs := time.Now()
@@ -608,6 +627,15 @@ func wgTurnProxyStart(peerAddrC *C.char, vklinkC *C.char, modeC *C.char, n C.int
 	ctx, cancel := context.WithCancel(context.Background())
 	currentTurnCancel = cancel
 	turnMutex.Unlock()
+
+	// Отменяем контекст на путях раннего выхода (-11/-12/-13): иначе ссылки и
+	// горутины, привязанные к ctx, доживали до следующего старта (go vet lostcancel).
+	started := false
+	defer func() {
+		if !started {
+			cancel()
+		}
+	}()
 
 	// Setup credentials function based on mode
 	if mode == "wb" {
@@ -692,9 +720,22 @@ func wgTurnProxyStart(peerAddrC *C.char, vklinkC *C.char, modeC *C.char, n C.int
 	}
 
 	ok := make(chan struct{}, int(n))
+	// allFailed закрывается, когда КАЖДЫЙ стрим провалил свою первую попытку.
+	// При мёртвой сети или отвергнутых кредах стримы ретраятся бесконечно, и без
+	// этого детекта wgTurnProxyStart висел вечно, удерживая operationMutex в
+	// Kotlin-слое (тумблер навечно «Соединение...», повторный тумблер в очереди).
+	// Теперь старт прерывается с -15, и ретраи с сетевым гейтом берёт на себя
+	// TurnProxyManager.startWithRetry.
+	allFailed := make(chan struct{})
 	streams := make([]*stream, int(n))
+	var firstFailCount atomic.Int32
+	onFirstFail := func() {
+		if firstFailCount.Add(1) == int32(len(streams)) {
+			close(allFailed)
+		}
+	}
 	for i := 0; i < int(n); i++ {
-		streams[i] = &stream{ctx: ctx, id: i, in: make(chan []byte, 512), out: lc, sessionID: sessionID, cert: &cert, watchdogTimeout: watchdogTimeout}
+		streams[i] = &stream{ctx: ctx, id: i, in: make(chan []byte, 512), out: lc, sessionID: sessionID, cert: &cert, watchdogTimeout: watchdogTimeout, onFirstFail: onFirstFail}
 		go streams[i].run(link, peer, udp != 0, ok, turnIp, turnPort, peerType)
 		time.Sleep(200 * time.Millisecond)
 	}
@@ -745,8 +786,26 @@ func wgTurnProxyStart(peerAddrC *C.char, vklinkC *C.char, modeC *C.char, n C.int
 
 	select {
 	case <-ok:
+		started = true
 		turnLog("[PROXY] First stream is ready, tunnel can start (in %s)", time.Since(startTs).Round(time.Millisecond))
 		return 0
+	case <-allFailed:
+		// Гонка: последний стрим мог стать готовым в тот же момент, что и
+		// закрытие allFailed — сначала перепроверяем ok.
+		select {
+		case <-ok:
+			started = true
+			turnLog("[PROXY] First stream is ready (race with allFailed), tunnel can start (in %s)", time.Since(startTs).Round(time.Millisecond))
+			return 0
+		default:
+		}
+		cancel()
+		turnLog("[PROXY] All %d streams failed their first attempt — aborting startup (in %s)", len(streams), time.Since(startTs).Round(time.Millisecond))
+		return startErrStreamFail
+	case <-time.After(startupTimeout):
+		cancel()
+		turnLog("[PROXY] Startup timeout (%v): no stream became ready", startupTimeout)
+		return startErrStreamFail
 	case <-ctx.Done():
 		turnLog("[PROXY] PROXY startup cancelled")
 		return startErrCancelled

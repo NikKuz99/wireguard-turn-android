@@ -45,6 +45,7 @@ class TurnProxyManager(private val context: Context) {
     private val startErrBindLocal = -12
     private val startErrDtlsCert = -13
     private val startErrCancelled = -14
+    private val startErrStreamFail = -15
     
     // State
     private var activeTunnelName: String? = null
@@ -202,7 +203,9 @@ class TurnProxyManager(private val context: Context) {
             val result = startForTunnelInternal(tunnelName, settings)
             if (result is TurnStartResult.Success) return result
             val failure = result as TurnStartResult.Failure
-            val retryable = failure.code == startErrResolvePeer || failure.code == startErrBindLocal
+            val retryable = failure.code == startErrResolvePeer ||
+                    failure.code == startErrBindLocal ||
+                    failure.code == startErrStreamFail
             Log.w(TAG, "TURN start attempt $attempts failed: ${failure.message} (retryable=$retryable)")
             if (!retryable || attempts >= 4) return result
             val networkUp = withTimeoutOrNull(45_000L) {
@@ -299,6 +302,7 @@ class TurnProxyManager(private val context: Context) {
                         startErrBindLocal -> "Failed to start TURN proxy: local UDP port is busy or unavailable. (error $ret)"
                         startErrDtlsCert -> "Failed to start TURN proxy: DTLS certificate generation failed. (error $ret)"
                         startErrCancelled -> "Failed to start TURN proxy: startup was cancelled by restart or tunnel stop. (error $ret)"
+                        startErrStreamFail -> "Failed to start TURN proxy: no TURN stream became ready in time (network or credentials). (error $ret)"
                         else -> "Failed to start TURN proxy (error $ret)"
                     }
                     Log.e(TAG, msg)
