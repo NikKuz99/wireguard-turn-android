@@ -5,20 +5,19 @@ All notable changes to this project are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/).
 
-## [Unreleased]
+## [Не выпущено]
 
-### Fixed
+### Исправлено
 
-- **TURN startup no longer hangs indefinitely when streams cannot connect.**
-  `wgTurnProxyStart` blocked forever when every stream kept failing (dead
-  network, rejected credentials): stream goroutines retry endlessly, so the
-  call never returned while holding the TURN start mutex — the toggle stayed
-  in the optimistic "connecting" state and a second toggle queued behind the
-  mutex. Startup now aborts with `error -15` as soon as every stream has
-  failed its first attempt, or after a 60 s hard timeout; `-15` is retryable
-  (like `-11`/`-12`), so the app-level retry with its connectivity gate
-  takes over. The startup context is also cancelled on early error exits
-  (`-11`/`-12`/`-13`) instead of lingering until the next start.
+- Запуск туннеля больше не зависает на «Соединение…», если соединение
+  установить не получается. Раньше при мёртвой сети или отвергнутых
+  креденциалах попытка запуска длилась бесконечно: внутренние процессы
+  повторялись без конца, а интерфейс оставался в состоянии подключения, и
+  повторное включение вставало в очередь. Теперь запуск прекращается с
+  ошибкой, как только каждая из попыток соединения провалилась первый раз
+  (или после жёсткого лимита в 60 секунд), и приложение повторяет запуск
+  само, как только сеть возвращается. Служебные ресурсы раннего выхода
+  тоже освобождаются сразу, а не доживают до следующего запуска.
 
 ## [1.8.0] - 2026-10-09
 
