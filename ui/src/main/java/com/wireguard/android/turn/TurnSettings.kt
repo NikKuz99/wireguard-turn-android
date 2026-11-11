@@ -23,6 +23,7 @@ data class TurnSettings(
     val streamsPerCred: Int = 4,
     val watchdogTimeout: Int = 0,
     val wrapKey: String = "",  // 64-hex-char SRTP-mimicry wrap key (empty = disabled)
+    val endpointIp: String = ""  // last-known-good IP of the peer domain (#@wgt:EndpointIP, empty = not provided)
 ) {
     fun toComments(): List<String> {
         val lines = mutableListOf(
@@ -42,6 +43,7 @@ data class TurnSettings(
         if (turnPort > 0) lines.add("#@wgt:TurnPort = $turnPort")
         if (watchdogTimeout > 0) lines.add("#@wgt:WatchdogTimeout = $watchdogTimeout")
         if (wrapKey.isNotBlank()) lines.add("#@wgt:WrapKey = $wrapKey")
+        if (endpointIp.isNotBlank()) lines.add("#@wgt:EndpointIP = $endpointIp")
         return lines
     }
 
@@ -60,6 +62,7 @@ data class TurnSettings(
             var streamsPerCred = 4
             var watchdogTimeout = 0
             var wrapKey = ""
+            var endpointIp = ""
             var noDtlsLegacy = false
             var foundAny = false
 
@@ -83,6 +86,7 @@ data class TurnSettings(
                     "turnport" -> turnPort = value.toIntOrNull() ?: 0
                     "watchdogtimeout" -> watchdogTimeout = value.toIntOrNull() ?: 0
                     "wrapkey" -> wrapKey = value
+                    "endpointip" -> endpointIp = value
                     "nodtls" -> noDtlsLegacy = value.toBoolean()  // legacy, for backward compatibility
                     "peertype" -> peerType = value
                     "streamspercred" -> streamsPerCred = value.toIntOrNull() ?: 4
@@ -98,7 +102,7 @@ data class TurnSettings(
                 peerType = "proxy_v1"
             }
 
-            return if (foundAny) TurnSettings(enabled, peer, vkLink, mode, streams, useUdp, localPort, turnIp, turnPort, peerType, streamsPerCred, watchdogTimeout, wrapKey) else null
+            return if (foundAny) TurnSettings(enabled, peer, vkLink, mode, streams, useUdp, localPort, turnIp, turnPort, peerType, streamsPerCred, watchdogTimeout, wrapKey, endpointIp) else null
         }
 
         fun validate(settings: TurnSettings): TurnSettings {

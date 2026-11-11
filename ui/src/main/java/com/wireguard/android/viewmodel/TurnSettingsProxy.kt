@@ -104,6 +104,11 @@ class TurnSettingsProxy : BaseObservable, Parcelable {
             notifyPropertyChanged(BR.wrapKey)
         }
 
+    // Адрес endpoint-домена из выданного конфига (аннотация #@wgt:EndpointIP):
+    // не редактируется пользователем, переносится как есть, чтобы сохранение
+    // конфига из редактора не теряло аннотацию.
+    var endpointIp: String = ""
+
     @get:Bindable
     var advancedExpanded: Boolean = false
         set(value) {
@@ -125,6 +130,7 @@ class TurnSettingsProxy : BaseObservable, Parcelable {
         peerType = parcel.readString() ?: "proxy_v1"
         streamsPerCred = parcel.readString() ?: ""
         wrapKey = parcel.readString() ?: ""
+        endpointIp = parcel.readString() ?: ""
         advancedExpanded = parcel.readInt() != 0
     }
 
@@ -145,6 +151,7 @@ class TurnSettingsProxy : BaseObservable, Parcelable {
             peerType = other.peerType
             streamsPerCred = other.streamsPerCred.toString()
             wrapKey = other.wrapKey
+            endpointIp = other.endpointIp
         }
     }
 
@@ -164,6 +171,7 @@ class TurnSettingsProxy : BaseObservable, Parcelable {
         dest.writeString(peerType)
         dest.writeString(streamsPerCred)
         dest.writeString(wrapKey)
+        dest.writeString(endpointIp)
         dest.writeInt(if (advancedExpanded) 1 else 0)
     }
 
@@ -221,6 +229,7 @@ class TurnSettingsProxy : BaseObservable, Parcelable {
             streamsPerCred = parsedStreamsPerCred,
             watchdogTimeout = parsedWatchdogTimeout,
             wrapKey = wrapKey.trim(),
+            endpointIp = endpointIp.trim(),
         )
         if (enabled) {
             TurnSettings.validate(settings)

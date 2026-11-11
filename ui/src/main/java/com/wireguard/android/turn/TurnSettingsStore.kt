@@ -47,6 +47,7 @@ class TurnSettingsStore(private val context: Context) {
                     turnPort = json.optInt("turnPort", 0),
                     peerType = json.optString("peerType", peerTypeDefault),
                     streamsPerCred = json.optInt("streamsPerCred", 4),
+                    endpointIp = json.optString("endpointIp", ""),
                 )
                 settings
             }
@@ -77,6 +78,7 @@ class TurnSettingsStore(private val context: Context) {
             .put("turnPort", settings.turnPort)
             .put("peerType", settings.peerType)
             .put("streamsPerCred", settings.streamsPerCred)
+            .put("endpointIp", settings.endpointIp)
 
         file.parentFile?.mkdirs()
         FileOutputStream(file, false).use { stream ->

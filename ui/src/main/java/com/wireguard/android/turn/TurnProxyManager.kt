@@ -280,7 +280,8 @@ class TurnProxyManager(private val context: Context) {
                     settings.streamsPerCred,
                     settings.watchdogTimeout,
                     networkHandle,
-                    wrapKey
+                    wrapKey,
+                    settings.endpointIp
                 )
 
                 val listenAddr = "127.0.0.1:${settings.localPort}"

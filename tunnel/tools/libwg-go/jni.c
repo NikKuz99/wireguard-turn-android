@@ -16,7 +16,7 @@ extern int wgGetSocketV4(int handle);
 extern int wgGetSocketV6(int handle);
 extern char *wgGetConfig(int handle);
 extern char *wgVersion();
-extern int wgTurnProxyStart(const char *peer_addr, const char *vklink, const char *mode, int n, int udp, const char *listen_addr, const char *turn_ip, int turn_port, const char *peer_type, int streams_per_cred, int watchdog_timeout, long long network_handle, const char *wrap_key);
+extern int wgTurnProxyStart(const char *peer_addr, const char *vklink, const char *mode, int n, int udp, const char *listen_addr, const char *turn_ip, int turn_port, const char *peer_type, int streams_per_cred, int watchdog_timeout, long long network_handle, const char *wrap_key, const char *endpoint_ip);
 extern void wgTurnProxyStop();
 extern void wgNotifyNetworkChange();
 extern const char* getNetworkDnsServers(long long network_handle);
@@ -314,7 +314,7 @@ JNIEXPORT jstring JNICALL Java_com_wireguard_android_backend_GoBackend_wgVersion
 	return ret;
 }
 
-JNIEXPORT jint JNICALL Java_com_wireguard_android_backend_TurnBackend_wgTurnProxyStart(JNIEnv *env, jclass c, jstring peer_addr, jstring vklink, jstring mode, jint n, jint useUdp, jstring listen_addr, jstring turn_ip, jint turn_port, jstring peer_type, jint streams_per_cred, jint watchdog_timeout, jlong network_handle, jstring wrap_key)
+JNIEXPORT jint JNICALL Java_com_wireguard_android_backend_TurnBackend_wgTurnProxyStart(JNIEnv *env, jclass c, jstring peer_addr, jstring vklink, jstring mode, jint n, jint useUdp, jstring listen_addr, jstring turn_ip, jint turn_port, jstring peer_type, jint streams_per_cred, jint watchdog_timeout, jlong network_handle, jstring wrap_key, jstring endpoint_ip)
 {
 	const char *peer_addr_jni = (*env)->GetStringUTFChars(env, peer_addr, 0);
 	const char *vklink_jni = (*env)->GetStringUTFChars(env, vklink, 0);
@@ -323,6 +323,7 @@ JNIEXPORT jint JNICALL Java_com_wireguard_android_backend_TurnBackend_wgTurnProx
 	const char *turn_ip_jni = (*env)->GetStringUTFChars(env, turn_ip, 0);
 	const char *peer_type_jni = (*env)->GetStringUTFChars(env, peer_type, 0);
 	const char *wrap_key_jni = (*env)->GetStringUTFChars(env, wrap_key, 0);
+	const char *endpoint_ip_jni = (*env)->GetStringUTFChars(env, endpoint_ip, 0);
 
 	// Duplicate strings to avoid MTE issues with JNI-tagged pointers during Go execution
 	char *peer_addr_str = peer_addr_jni ? strdup(peer_addr_jni) : NULL;
@@ -332,10 +333,11 @@ JNIEXPORT jint JNICALL Java_com_wireguard_android_backend_TurnBackend_wgTurnProx
 	char *turn_ip_str = turn_ip_jni ? strdup(turn_ip_jni) : NULL;
 	char *peer_type_str = peer_type_jni ? strdup(peer_type_jni) : NULL;
 	char *wrap_key_str = wrap_key_jni ? strdup(wrap_key_jni) : NULL;
+	char *endpoint_ip_str = endpoint_ip_jni ? strdup(endpoint_ip_jni) : NULL;
 
 	update_current_network(env, network_handle);
 
-	int ret = wgTurnProxyStart(peer_addr_str, vklink_str, mode_str, (int)n, (int)useUdp, listen_addr_str, turn_ip_str, (int)turn_port, peer_type_str, (int)streams_per_cred, (int)watchdog_timeout, (long long)network_handle, wrap_key_str);
+	int ret = wgTurnProxyStart(peer_addr_str, vklink_str, mode_str, (int)n, (int)useUdp, listen_addr_str, turn_ip_str, (int)turn_port, peer_type_str, (int)streams_per_cred, (int)watchdog_timeout, (long long)network_handle, wrap_key_str, endpoint_ip_str);
 
 	(*env)->ReleaseStringUTFChars(env, peer_addr, peer_addr_jni);
 	(*env)->ReleaseStringUTFChars(env, vklink, vklink_jni);
@@ -344,6 +346,7 @@ JNIEXPORT jint JNICALL Java_com_wireguard_android_backend_TurnBackend_wgTurnProx
 	(*env)->ReleaseStringUTFChars(env, turn_ip, turn_ip_jni);
 	(*env)->ReleaseStringUTFChars(env, peer_type, peer_type_jni);
 	(*env)->ReleaseStringUTFChars(env, wrap_key, wrap_key_jni);
+	(*env)->ReleaseStringUTFChars(env, endpoint_ip, endpoint_ip_jni);
 
 	free(peer_addr_str);
 	free(vklink_str);
@@ -352,6 +355,7 @@ JNIEXPORT jint JNICALL Java_com_wireguard_android_backend_TurnBackend_wgTurnProx
 	free(turn_ip_str);
 	free(peer_type_str);
 	free(wrap_key_str);
+	free(endpoint_ip_str);
 
 	return ret;
 }
